@@ -237,9 +237,15 @@ export async function startPlanReviewServer(options: {
 		decisionSettled = true;
 		resolveDecision(result);
 		for (const listener of decisionListeners) {
-			Promise.resolve(listener(result)).catch((error) => {
-				console.error("[Plan Review] Decision listener failed:", error);
-			});
+			// Each listener runs on a microtask, so a SYNCHRONOUS throw becomes a
+			// rejection the catch below logs. This runs inside an HTTP handler: a
+			// listener that throws there (a replaced Pi runtime's stale-ctx emit,
+			// upstream #1864) must never escape into it, where it kills the Pi process.
+			Promise.resolve()
+				.then(() => listener(result))
+				.catch((error) => {
+					console.error("[Plan Review] Decision listener failed:", error);
+				});
 		}
 		return true;
 	};
