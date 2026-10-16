@@ -37,13 +37,14 @@ interface FakeReview {
 	plan: string;
 	decide: (result: PlanReviewDecision) => void;
 	stopped: boolean;
+	actions: string[];
 	pushes: string[];
 	decided: boolean;
 	/** The server accepted a decision and is still recording it (updatePlan refuses). */
 	claimed: boolean;
 }
 
-function createHarness(cwd: string) {
+function createHarness(cwd: string, waitForReviewStart?: Promise<void>) {
 	const tools = new Map<string, { execute: (...args: unknown[]) => Promise<any> }>();
 	const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown>>();
@@ -101,6 +102,7 @@ function createHarness(cwd: string) {
 	const startPlanReview: NonNullable<PlannotatorExtensionDeps["startPlanReview"]> = async (_ctx, planContent) => {
 		let resolve!: (result: PlanReviewDecision) => void;
 		let reject!: (err: Error) => void;
+		let waiting = false;
 		const decision = new Promise<PlanReviewDecision>((res, rej) => {
 			resolve = res;
 			reject = rej;
@@ -108,6 +110,7 @@ function createHarness(cwd: string) {
 		const review: FakeReview = {
 			plan: planContent,
 			stopped: false,
+			actions: [],
 			pushes: [],
 			decided: false,
 			claimed: false,
@@ -117,17 +120,23 @@ function createHarness(cwd: string) {
 			},
 		};
 		reviews.push(review);
+		await waitForReviewStart;
 		return {
 			url: `http://localhost:${4000 + reviews.length}`,
 			reviewId: `review-${reviews.length}`,
-			waitForDecision: () => decision,
+			waitForDecision: () => { waiting = true; return decision; },
 			onDecision: () => () => undefined,
+			closeKeepingDraft: () => {
+				review.actions.push("close");
+				return { closed: true, unsentAnnotations: 0 };
+			},
 			stop: () => {
 				if (review.stopped) return;
 				review.stopped = true;
+				review.actions.push("stop");
 				const err = new Error("Plannotator browser session was stopped.");
 				err.name = "PlannotatorBrowserSessionStopped";
-				reject(err);
+				if (waiting) reject(err);
 			},
 			updatePlan: (plan: string) => {
 				if (review.decided || review.claimed || review.stopped) return null;
@@ -150,6 +159,9 @@ function createHarness(cwd: string) {
 		entries,
 		sentUserMessages,
 		lastPhase,
+		async shutdown() {
+			for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, ctx);
+		},
 		async start() {
 			plannotator(pi as never, { startPlanReview, hasPlanBrowserHtml: () => true });
 			for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
@@ -324,6 +336,7 @@ describe("non-blocking plan review", () => {
 
 		await harness.togglePlanMode();
 		expect(harness.reviews[0]!.stopped).toBe(true);
+		expect(harness.reviews[0]!.actions).toEqual(["close", "stop"]);
 		expect(harness.lastPhase()).toBe("idle");
 
 		harness.reviews[0]!.decide({ approved: true });
@@ -331,4 +344,31 @@ describe("non-blocking plan review", () => {
 		expect(harness.sentUserMessages).toEqual([]);
 		expect(harness.lastPhase()).toBe("idle");
 	});
+});
+
+
+test("shutdown notifies the pending plan review before stopping it", async () => {
+	const { harness } = await plannedSession();
+	await harness.submit("PLAN.md");
+	await harness.shutdown();
+	expect(harness.reviews[0]!.actions).toEqual(["close", "stop"]);
+	harness.reviews[0]!.decide({ approved: true });
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	expect(harness.sentUserMessages).toEqual([]);
+});
+
+test("planning ends during startup: the orphan review is notified before stop", async () => {
+	let release!: () => void;
+	const starting = new Promise<void>((resolve) => { release = resolve; });
+	const cwd = makeTempDir("plannotator-orphan-review-");
+	writeFileSync(join(cwd, "PLAN.md"), "# Plan\n\n- [ ] Implement the change\n");
+	const harness = createHarness(cwd, starting);
+	await harness.start();
+	const opening = harness.submit("PLAN.md");
+	await harness.settle(() => harness.reviews.length > 0);
+	await harness.togglePlanMode();
+	release();
+	await opening;
+	expect(harness.reviews[0]!.actions).toEqual(["close", "stop"]);
+	expect(harness.sentUserMessages).toEqual([]);
 });

@@ -160,12 +160,12 @@ export function handleHostControlRequest(request: HostControlRequest, route: Hos
 /** The external-annotation SSE event that tells open tabs the agent closed the review. */
 export interface HostSessionClosedEvent {
 	type: "session-closed";
-	by: "agent";
+	by: "agent" | "session";
 	unsentAnnotations: number;
 }
 
-export function hostSessionClosedEvent(unsentAnnotations: number): HostSessionClosedEvent {
-	return { type: "session-closed", by: "agent", unsentAnnotations };
+export function hostSessionClosedEvent(unsentAnnotations: number, by: HostSessionClosedEvent["by"] = "agent"): HostSessionClosedEvent {
+	return { type: "session-closed", by, unsentAnnotations };
 }
 
 // --- Host side: reading the answers (a host that calls over HTTP) ------------

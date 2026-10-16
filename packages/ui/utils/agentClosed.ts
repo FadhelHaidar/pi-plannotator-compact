@@ -31,3 +31,17 @@ export function agentClosedSubtitle(unsentAnnotations: number, surface: AgentClo
   const comments = unsentAnnotations === 1 ? 'Your comment is' : `Your ${unsentAnnotations} comments are`;
   return `The agent closed this review. ${comments} saved as a draft. ${RESTORE[surface]}`;
 }
+
+/** Session replacement or reload is not an agent decision to end planning. */
+export function closedReviewCopy(
+  { by, unsentAnnotations }: { by?: 'agent' | 'session'; unsentAnnotations: number },
+  surface: AgentClosedSurface = 'document',
+): { title: string; subtitle: string } {
+  if (by !== 'session') {
+    return { title: AGENT_CLOSED_TITLE, subtitle: agentClosedSubtitle(unsentAnnotations, surface) };
+  }
+  return {
+    title: 'Review Closed',
+    subtitle: `This review's session ended. Your saved draft comments are kept. ${RESTORE[surface]}`,
+  };
+}

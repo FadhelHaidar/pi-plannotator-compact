@@ -35,10 +35,12 @@ const STREAM = `${BASE}/stream`;
 export function createExternalAnnotationHandler(mode: "plan" | "review") {
 	const store = createAnnotationStore<StorableAnnotation>();
 	const subscribers = new Set<ServerResponse>();
+	let closedEvent: string | null = null;
 	const transform = mode === "plan" ? transformPlanInput : transformReviewInput;
 
 	const broadcast = (event: ExternalAnnotationEvent<StorableAnnotation>) => {
 		const data = serializeSSEEvent(event);
+		if (event.type === "session-closed") closedEvent = data;
 		for (const res of subscribers) {
 			try {
 				res.write(data);
@@ -55,6 +57,11 @@ export function createExternalAnnotationHandler(mode: "plan" | "review") {
 	return {
 		/** Send an event that is not a store mutation (session-closed) to every open stream. */
 		broadcast,
+
+		/** Flush queued events and finish every subscribed response on session shutdown. */
+		endStreams(): void {
+			for (const res of subscribers) res.end();
+		},
 
 		/** Push annotations directly into the store (bypasses HTTP, reuses same validation). */
 		addAnnotations(body: unknown): { ids: string[] } | { error: string } {
@@ -86,6 +93,11 @@ export function createExternalAnnotationHandler(mode: "plan" | "review") {
 					annotations: store.getAll(),
 				};
 				res.write(serializeSSEEvent(snapshot));
+				// A loading or reconnecting tab may have missed the terminal broadcast.
+				if (closedEvent !== null) {
+					res.end(closedEvent);
+					return true;
+				}
 
 				subscribers.add(res);
 

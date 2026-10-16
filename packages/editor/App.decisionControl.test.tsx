@@ -71,6 +71,7 @@ let seededExternalAnnotations: unknown[] = [];
 const savedDocumentDrafts = new Map<string, unknown[]>();
 
 class StubEventSource {
+  static instances: StubEventSource[] = [];
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
@@ -87,6 +88,7 @@ class StubEventSource {
 
   constructor(url: string | URL) {
     this.url = String(url);
+    StubEventSource.instances.push(this);
     const payload = seededExternalAnnotations;
     if (payload.length > 0) {
       setTimeout(() => {
@@ -257,6 +259,7 @@ afterEach(async () => {
   submissions = [];
   failFeedbackPosts = 0;
   seededExternalAnnotations = [];
+  StubEventSource.instances = [];
   savedDocumentDrafts.clear();
   fileBrowserModule?.resetFileTreeBackend();
   memory.clear();
@@ -777,5 +780,24 @@ describe.if(hasDom)("annotate completion screen", () => {
     expect(submissions[0]!.nothingToSend).toBe(true);
     expect(completionState()).toBe("done");
     expectNoSentClaim();
+  });
+});
+
+
+describe.if(hasDom)("plan session closure copy", () => {
+  test.each(["agent", "session"])("%s closure uses the existing completion overlay without submitting feedback", async (by) => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mount({ plan: MARKDOWN, origin: "pi", sharingEnabled: false, serverConfig: {} }, () => host?.textContent?.includes("Some body text."));
+    await act(async () => {
+      const stream = StubEventSource.instances.find((source) => source.url.includes("external-annotations"));
+      expect(stream).toBeDefined();
+      stream!.onmessage?.({ data: JSON.stringify({ type: "session-closed", by, unsentAnnotations: 1 }) } as MessageEvent);
+    });
+    await settle();
+    expect(host?.textContent).toContain(by === "session" ? "Review Closed" : "Closed by the Agent");
+    expect(host?.textContent).toContain(by === "session" ? "Your saved draft comments are kept." : "Your comment is saved as a draft.");
+    expect(host?.textContent).toContain("Reopening the same document, unchanged, brings it back.");
+    expect(submissions).toEqual([]);
   });
 });

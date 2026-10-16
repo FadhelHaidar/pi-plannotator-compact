@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -164,6 +165,7 @@ export interface PlannotatorReviewStatusPayload {
 
 export type PlannotatorReviewStatusResult =
 	| { status: "pending" }
+	| { status: "closed" }
 	| ({ status: "completed" } & PlannotatorReviewResultEvent)
 	| { status: "missing" };
 
@@ -254,30 +256,54 @@ const REVIEW_STATUS_PATH = join(homedir(), ".pi", "plannotator-review-status.jso
 
 type StoredReviewStatus = Record<string, PlannotatorReviewStatusResult>;
 
-function readStoredReviewStatuses(): StoredReviewStatus {
+type StoredReviewStatusReadResult =
+	| { ok: true; statuses: StoredReviewStatus }
+	| { ok: false; error: unknown };
+
+function readStoredReviewStatuses(path: string): StoredReviewStatusReadResult {
 	try {
-		if (!existsSync(REVIEW_STATUS_PATH)) return {};
-		const raw = readFileSync(REVIEW_STATUS_PATH, "utf-8");
-		const parsed = JSON.parse(raw) as StoredReviewStatus;
-		return parsed && typeof parsed === "object" ? parsed : {};
-	} catch {
-		return {};
+		const parsed = JSON.parse(readFileSync(path, "utf-8"));
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			return { ok: false, error: new Error("Review status store must be a JSON object.") };
+		}
+		return { ok: true, statuses: parsed };
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return { ok: true, statuses: {} };
+		}
+		return { ok: false, error };
 	}
 }
 
-function writeStoredReviewStatuses(statuses: StoredReviewStatus): void {
-	mkdirSync(dirname(REVIEW_STATUS_PATH), { recursive: true });
-	writeFileSync(REVIEW_STATUS_PATH, JSON.stringify(statuses, null, 2));
+export function writeReviewStatusesAtomically(path: string, statuses: StoredReviewStatus): void {
+	mkdirSync(dirname(path), { recursive: true });
+	const tempPath = `${path}.${randomUUID()}.tmp`;
+	try {
+		writeFileSync(tempPath, JSON.stringify(statuses, null, 2), { mode: 0o600 });
+		renameSync(tempPath, path);
+	} catch (error) {
+		try {
+			rmSync(tempPath, { force: true });
+		} catch {
+			// Preserve the original write/rename failure.
+		}
+		throw error;
+	}
 }
 
-function setStoredReviewStatus(reviewId: string, status: PlannotatorReviewStatusResult): void {
-	const statuses = readStoredReviewStatuses();
-	statuses[reviewId] = status;
-	writeStoredReviewStatuses(statuses);
+function setStoredReviewStatus(path: string, reviewId: string, status: PlannotatorReviewStatusResult): void {
+	const result = readStoredReviewStatuses(path);
+	if (!result.ok) {
+		console.error(`[Plannotator] Skipping review status write; preserving unreadable store at ${path}:`, result.error);
+		return;
+	}
+	result.statuses[reviewId] = status;
+	writeReviewStatusesAtomically(path, result.statuses);
 }
 
-function getStoredReviewStatus(reviewId: string): PlannotatorReviewStatusResult {
-	return readStoredReviewStatuses()[reviewId] ?? { status: "missing" };
+function getStoredReviewStatus(path: string, reviewId: string): PlannotatorReviewStatusResult {
+	const result = readStoredReviewStatuses(path);
+	return (result.ok ? result.statuses[reviewId] : undefined) ?? { status: "missing" };
 }
 
 function createActiveSessionContext() {
@@ -297,6 +323,7 @@ function createActiveSessionContext() {
 }
 
 export interface PlannotatorEventListenerOptions {
+	reviewStatusPath?: string;
 	handlePlanMode?: (
 		mode: NonNullable<PlannotatorPlanModePayload["mode"]>,
 		ctx: ExtensionContext,
@@ -308,11 +335,29 @@ export function registerPlannotatorEventListeners(
 	options: PlannotatorEventListenerOptions = {},
 ): void {
 	const activeSessionContext = createActiveSessionContext();
+	const reviewStatusPath = options.reviewStatusPath ?? REVIEW_STATUS_PATH;
+	let sessionGeneration = 0;
+	const pendingReviews = new Set<() => void>();
+	const closePendingReviews = (): void => {
+		sessionGeneration += 1;
+		for (const close of pendingReviews) {
+			try {
+				close();
+			} catch (error) {
+				console.error("[Plannotator] Failed to close plan review:", error);
+			}
+		}
+	};
 
 	// Plannotator event requests are handled against the latest active session.
 	// The active context is intentionally session-scoped and replaced on each session_start.
 	pi.on("session_start", async (_event, ctx) => {
+		closePendingReviews();
 		activeSessionContext.set(ctx);
+	});
+	pi.on("session_shutdown", async () => {
+		activeSessionContext.clear();
+		closePendingReviews();
 	});
 	pi.events.on(PLANNOTATOR_REQUEST_CHANNEL, async (data) => {
 		const request = data as Partial<PlannotatorRequest> | null;
@@ -329,7 +374,7 @@ export function registerPlannotatorEventListeners(
 					request.respond({ status: "error", error: "Missing reviewId for review-status request." });
 					return;
 				}
-				request.respond({ status: "handled", result: getStoredReviewStatus(reviewId) });
+				request.respond({ status: "handled", result: getStoredReviewStatus(reviewStatusPath, reviewId) });
 				return;
 			}
 
@@ -359,9 +404,29 @@ export function registerPlannotatorEventListeners(
 						request.respond({ status: "error", error: "Missing planContent for plan-review request." });
 						return;
 					}
+					const generation = sessionGeneration;
 					const session = await startPlanReviewBrowserSession(ctx, planContent);
-					setStoredReviewStatus(session.reviewId, { status: "pending" });
-					session.onDecision((result) => {
+					setStoredReviewStatus(reviewStatusPath, session.reviewId, { status: "pending" });
+					let settled = false;
+					let unsubscribe: (() => void) | undefined;
+					const close = (): void => {
+						if (settled) return;
+						// A claimed decision wins over session closure and completes normally.
+						if (session.closeKeepingDraft?.().closed === false) return;
+						settled = true;
+						pendingReviews.delete(close);
+						unsubscribe?.();
+						try {
+							setStoredReviewStatus(reviewStatusPath, session.reviewId, { status: "closed" });
+						} finally {
+							session.stop();
+						}
+					};
+					pendingReviews.add(close);
+					unsubscribe = session.onDecision((result) => {
+						if (settled) return;
+						settled = true;
+						pendingReviews.delete(close);
 						const reviewResult = {
 							reviewId: session.reviewId,
 							approved: result.approved,
@@ -371,9 +436,10 @@ export function registerPlannotatorEventListeners(
 							permissionMode: result.permissionMode,
 							...(result.answersOnly ? { answersOnly: true } : {}),
 						} satisfies PlannotatorReviewResultEvent;
-						setStoredReviewStatus(session.reviewId, { status: "completed", ...reviewResult });
+						setStoredReviewStatus(reviewStatusPath, session.reviewId, { status: "completed", ...reviewResult });
 						pi.events.emit(PLANNOTATOR_REVIEW_RESULT_CHANNEL, reviewResult);
 					});
+					if (generation !== sessionGeneration) close();
 					request.respond({
 						status: "handled",
 						result: {
