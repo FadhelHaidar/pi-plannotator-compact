@@ -199,6 +199,7 @@ export interface PlanReviewBrowserSession extends BrowserDecisionSession<PlanRev
 	onDecision: (listener: (result: PlanReviewDecision) => void | Promise<void>) => () => void;
 	/** Push a revised plan into the open tab; null once decided (open a new review). */
 	updatePlan: PlanServerResult["updatePlan"];
+	closeKeepingDraft?: PlanServerResult["closeKeepingDraft"];
 }
 
 function delay(ms: number): Promise<void> {
@@ -396,6 +397,7 @@ export async function startPlanReviewBrowserSession(
 		reviewId: server.reviewId,
 		onDecision: server.onDecision,
 		updatePlan: server.updatePlan,
+		closeKeepingDraft: server.closeKeepingDraft,
 	};
 }
 

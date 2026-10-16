@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { countUnsentDraftComments, handleHostControlRequest, type HostControlRoute } from "./host-control";
+import { countUnsentDraftComments, handleHostControlRequest, hostSessionClosedEvent, type HostControlRoute } from "./host-control";
 
 const TOKEN = "k".repeat(40);
 
@@ -70,4 +70,10 @@ describe("countUnsentDraftComments", () => {
       }),
     ).toBe(5);
   });
+});
+
+
+test("session-closed defaults to agent for existing callers and accepts session cancellation", () => {
+  expect(hostSessionClosedEvent(2)).toEqual({ type: "session-closed", by: "agent", unsentAnnotations: 2 });
+  expect(hostSessionClosedEvent(2, "session")).toEqual({ type: "session-closed", by: "session", unsentAnnotations: 2 });
 });

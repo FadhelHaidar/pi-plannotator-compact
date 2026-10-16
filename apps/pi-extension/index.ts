@@ -802,7 +802,11 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 		review.settled = true;
 		if (review.tracked) openReviews.remove(review.tracked);
 		try {
-			review.session.stop();
+			try {
+				review.session.closeKeepingDraft?.();
+			} finally {
+				review.session.stop();
+			}
 		} catch (err) {
 			console.error(`Plannotator: failed to close the plan review: ${err instanceof Error ? err.message : String(err)}`);
 		}
@@ -1984,7 +1988,11 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 			// review would be an orphan whose decision nobody delivers.
 			if (phase !== "planning") {
 				try {
-					session.stop();
+					try {
+						session.closeKeepingDraft?.();
+					} finally {
+						session.stop();
+					}
 				} catch {
 					// Best effort: nothing was delivered through it.
 				}

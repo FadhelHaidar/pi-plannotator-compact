@@ -20,7 +20,7 @@ import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react';
 import * as useExternalAnnotationsModule from './useExternalAnnotations';
-import type { ExternalAnnotationTransport } from './useExternalAnnotations';
+import type { ExternalAnnotationTransport, ExternalSessionClosed } from './useExternalAnnotations';
 
 // Capture real function references at import time.
 const setExternalAnnotationTransport = useExternalAnnotationsModule.setExternalAnnotationTransport;
@@ -171,12 +171,12 @@ describe('session-closed event', () => {
       update: async () => {},
       clear: async () => {},
     });
-    const closed: number[] = [];
+    const closed: ExternalSessionClosed[] = [];
     const resultRef: { current: HookResult | null } = { current: null };
     function ClosingHarness() {
       resultRef.current = useExternalAnnotations<TestAnnotation>({
         enabled: true,
-        onSessionClosed: (event) => closed.push(event.unsentAnnotations),
+        onSessionClosed: (event) => closed.push(event),
       });
       return null;
     }
@@ -190,8 +190,14 @@ describe('session-closed event', () => {
     await act(async () => {
       emit?.({ type: 'snapshot', annotations: [{ id: 'x' }] });
       emit?.({ type: 'session-closed', by: 'agent', unsentAnnotations: 4 });
+      emit?.({ type: 'session-closed', by: 'session', unsentAnnotations: 2 });
+      emit?.({ type: 'session-closed' });
     });
-    expect(closed).toEqual([4]);
+    expect(closed).toEqual([
+      { by: 'agent', unsentAnnotations: 4 },
+      { by: 'session', unsentAnnotations: 2 },
+      { by: 'agent', unsentAnnotations: 0 },
+    ]);
     expect(resultRef.current?.externalAnnotations.map((a) => a.id)).toEqual(['x']);
     await act(async () => { root.unmount(); });
   });

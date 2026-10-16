@@ -4,7 +4,7 @@ import { likelyAppHtmlEncoding, prewarmAppHtml } from "../generated/app-html.ts"
 import { createServer } from "node:http";
 
 import { contentHash, deleteDraft, loadDraft } from "../generated/draft.ts";
-import { countUnsentDraftComments } from "../generated/host-control.ts";
+import { countUnsentDraftComments, hostSessionClosedEvent, type HostCloseOutcome } from "../generated/host-control.ts";
 import { handleHostControl, resolveHostControlToken, type HostControl } from "./host-control.ts";
 import {
 	type ArchivedPlan,
@@ -105,6 +105,8 @@ export interface PlanServerResult {
 	 */
 	updatePlan: (plan: string) => PlanRevisionResult | null;
 	waitForDone?: () => Promise<void>;
+	/** Internal session cancellation; deliberately not exposed through hostControl.close. */
+	closeKeepingDraft: () => HostCloseOutcome;
 	stop: () => void;
 	/** Host-only status (no close: a plan review ends with the reviewer's decision). */
 	hostControl: HostControl;
@@ -225,6 +227,8 @@ export async function startPlanReviewServer(options: {
 	let resolveDecision!: (result: PlanReviewDecision) => void;
 	const decisionListeners = new Set<(result: PlanReviewDecision) => void | Promise<void>>();
 	let decisionSettled = false;
+	let closedByHost = false;
+	let stopped = false;
 	// Set the moment a decision passes the revision check, before its awaits
 	// (note integrations): updatePlan then refuses, so the plan a decision
 	// names cannot be swapped while that decision is still being recorded.
@@ -233,7 +237,7 @@ export async function startPlanReviewServer(options: {
 		resolveDecision = r;
 	});
 	const publishDecision = (result: PlanReviewDecision): boolean => {
-		if (decisionSettled) return false;
+		if (decisionSettled || closedByHost) return false;
 		decisionSettled = true;
 		resolveDecision(result);
 		for (const listener of decisionListeners) {
@@ -260,7 +264,7 @@ export async function startPlanReviewServer(options: {
 			kind: "plan",
 			documents: [],
 			unsentAnnotations: draftKey ? countUnsentDraftComments(loadDraft(draftKey)) : 0,
-			decided: decisionSettled || decisionClaimed,
+			decided: decisionSettled || decisionClaimed || closedByHost,
 		}),
 	};
 
@@ -279,6 +283,12 @@ export async function startPlanReviewServer(options: {
 	 * last loaded it: refuse, so the reviewer sees the new text first. A body
 	 * without the field (an older client, or a host that never revises) passes.
 	 */
+	const refuseClosedReview = (res: Parameters<typeof json>[0]): boolean => {
+		if (!closedByHost) return false;
+		json(res, { error: "This review is closed. Your draft has been kept.", closedByHost: true }, 409);
+		return true;
+	};
+
 	const isStaleRevision = (body: Record<string, unknown>): boolean =>
 		typeof body.planRevision === "number" && body.planRevision !== planRevision;
 	const refuseStaleRevision = (res: Parameters<typeof json>[0]): void => {
@@ -484,6 +494,7 @@ export async function startPlanReviewServer(options: {
 		} else if (url.pathname === "/api/save-notes" && req.method === "POST") {
 			await handleSaveNotesRequest(req, res);
 		} else if (url.pathname === "/api/approve" && req.method === "POST") {
+			if (refuseClosedReview(res)) return;
 			if (decisionSettled) {
 				json(res, { ok: true, duplicate: true });
 				return;
@@ -500,6 +511,8 @@ export async function startPlanReviewServer(options: {
 			} catch {
 				body = {};
 			}
+			// The session can close while a partial request body is still arriving.
+			if (refuseClosedReview(res)) return;
 			if (isStaleRevision(body)) {
 				refuseStaleRevision(res);
 				return;
@@ -581,6 +594,7 @@ export async function startPlanReviewServer(options: {
 			});
 			json(res, { ok: true, savedPath });
 		} else if (url.pathname === "/api/deny" && req.method === "POST") {
+			if (refuseClosedReview(res)) return;
 			if (decisionSettled) {
 				json(res, { ok: true, duplicate: true });
 				return;
@@ -596,6 +610,8 @@ export async function startPlanReviewServer(options: {
 			} catch {
 				body = {};
 			}
+			// The session can close while a partial request body is still arriving.
+			if (refuseClosedReview(res)) return;
 			if (isStaleRevision(body)) {
 				refuseStaleRevision(res);
 				return;
@@ -651,14 +667,23 @@ export async function startPlanReviewServer(options: {
 		url: buildAdvertisedUrl(port),
 		waitForDecision: () => decisionPromise,
 		hostControl,
+		closeKeepingDraft: () => {
+			if (options.mode === "archive") return { closed: false, reason: "not-closable" };
+			if (closedByHost || decisionSettled || decisionClaimed) return { closed: false, reason: "decided" };
+			const unsentAnnotations = hostControl.status().unsentAnnotations;
+			closedByHost = true;
+			decisionListeners.clear();
+			externalAnnotations?.broadcast(hostSessionClosedEvent(unsentAnnotations, "session"));
+			return { closed: true, unsentAnnotations };
+		},
 		onDecision: (listener) => {
-			decisionListeners.add(listener);
+			if (!closedByHost) decisionListeners.add(listener);
 			return () => {
 				decisionListeners.delete(listener);
 			};
 		},
 		updatePlan: (plan) => {
-			if (options.mode === "archive" || decisionSettled || decisionClaimed) return null;
+			if (options.mode === "archive" || closedByHost || decisionSettled || decisionClaimed) return null;
 			if (plan === currentPlan) {
 				return { revision: planRevision, version: versionInfo?.version ?? 0, unchanged: true };
 			}
@@ -679,18 +704,29 @@ export async function startPlanReviewServer(options: {
 		},
 		...(donePromise && { waitForDone: () => donePromise }),
 		stop: () => {
+			if (stopped) return;
+			stopped = true;
 			// try/finally: a throwing dispose must never leave the listener bound.
 			try {
 				closeAllFileBrowserWatchers();
 				aiRuntime?.dispose();
 			} finally {
-				server.close();
-				// close() only stops the listener; drain browser keep-alive sockets so a
-				// stopped session's connections die immediately instead of at the
-				// browser's whim (parity with Bun's server.stop(), which closes idle
-				// connections). Guarded: jiti can run under hosts whose node:http lacks
-				// closeAllConnections.
-				server.closeAllConnections?.();
+				try {
+					// Finish SSE before close() so the transport can drain its queued close event.
+					if (closedByHost) externalAnnotations?.endStreams();
+				} finally {
+					const closeConnections = () => {
+						try {
+							server.close();
+						} finally {
+							// Guarded for jiti hosts whose node:http lacks closeAllConnections.
+							server.closeAllConnections?.();
+						}
+					};
+					// shortcut: final draft saves get 150ms, use an acknowledged flush if longer saves must be guaranteed.
+					if (closedByHost) setTimeout(closeConnections, 150).unref();
+					else closeConnections();
+				}
 			}
 		},
 	};

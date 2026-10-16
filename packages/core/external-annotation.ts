@@ -44,7 +44,7 @@ export type ExternalAnnotationEvent<T = unknown> =
    * closed it (`POST /api/host/close`, packages/shared/host-control.ts). The
    * tab shows it; the reviewer's unsent comments stay in the draft.
    */
-  | { type: "session-closed"; by: "agent"; unsentAnnotations: number };
+  | { type: "session-closed"; by: "agent" | "session"; unsentAnnotations: number };
 
 // ---------------------------------------------------------------------------
 // SSE helpers

@@ -122,6 +122,7 @@ interface UseExternalAnnotationsReturn<T> {
 
 /** The agent session that opened this review closed it (`session-closed` on the stream). */
 export interface ExternalSessionClosed {
+  by?: 'agent' | 'session';
   unsentAnnotations: number;
 }
 
@@ -192,6 +193,7 @@ export function useExternalAnnotations<T extends { id: string; source?: string }
           break;
         case 'session-closed':
           onSessionClosedRef.current?.({
+            by: parsed.by === 'session' ? 'session' : 'agent',
             unsentAnnotations: typeof parsed.unsentAnnotations === 'number' ? parsed.unsentAnnotations : 0,
           });
           break;
