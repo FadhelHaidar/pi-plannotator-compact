@@ -53,6 +53,7 @@ import { useSharing } from '@plannotator/ui/hooks/useSharing';
 import { shareableDocumentMarkdown } from '@plannotator/ui/utils/sharing';
 import { getCallbackConfig, CallbackAction, executeCallback } from '@plannotator/ui/utils/callback';
 import { useAgents } from '@plannotator/ui/hooks/useAgents';
+import { usePlanModels, type PlanModelOption } from '@plannotator/ui/hooks/usePlanModels';
 import { useActiveSection } from '@plannotator/ui/hooks/useActiveSection';
 import { storage } from '@plannotator/ui/utils/storage';
 import { getIdentity } from '@plannotator/ui/utils/identity';
@@ -2764,6 +2765,10 @@ const App: React.FC = () => {
 
   // Fetch available agents for OpenCode (for validation on approve)
   const { agents: availableAgents, validateAgent, getAgentWarning } = useAgents(origin);
+  // Approval model picker: Pi reports its catalog, every other host reports
+  // none and the picker stays hidden. `null` means "no switch".
+  const planModels = usePlanModels(origin === 'pi');
+  const [planModel, setPlanModel] = useState<PlanModelOption | null>(null);
 
   // Apply shared annotations to DOM after they're loaded
   useEffect(() => {
@@ -4288,10 +4293,16 @@ const App: React.FC = () => {
         : autoSaveResultsRef.current;
 
       // Build request body - include integrations if enabled
-      const body: { draftGeneration: number; planRevision?: number; obsidian?: object; bear?: object; octarine?: object; feedback?: string; agentSwitch?: string; planSave?: { enabled: boolean; customPath?: string }; permissionMode?: string } = {
+      const body: { draftGeneration: number; planRevision?: number; obsidian?: object; bear?: object; octarine?: object; feedback?: string; agentSwitch?: string; modelSwitch?: { provider: string; id: string }; planSave?: { enabled: boolean; customPath?: string }; permissionMode?: string } = {
         draftGeneration: getDraftGeneration(),
         ...planRevisionBodyField(),
       };
+
+      // The reviewer's model pick for the implementation; absent means the
+      // host's phase config decides, exactly as before the picker existed.
+      if (planModel) {
+        body.modelSwitch = { provider: planModel.provider, id: planModel.id };
+      }
 
       // Include permission mode for Claude Code
       if (origin === 'claude-code') {
@@ -6854,6 +6865,16 @@ const App: React.FC = () => {
           canShareCurrentSession={canShareCurrentSession}
           agentName={agentName}
           availableAgents={availableAgents}
+          planModelPicker={
+            planModels.models.length > 0
+              ? {
+                  models: planModels.models,
+                  current: planModels.current,
+                  value: planModel,
+                  onChange: setPlanModel,
+                }
+              : undefined
+          }
           showAnnotationsWarning={hasFeedbackToSend}
           questionProgress={headerQuestionProgress}
           feedbackLabel={answersOnlyFeedback ? SEND_ANSWERS_LABEL : undefined}

@@ -31,6 +31,7 @@ function createHarness(reviewStatusPath: string, options: { uniqueReviews?: bool
 	let handleRequest!: (data: PlannotatorRequest) => Promise<void>;
 	let startSession!: (event: unknown, ctx: ExtensionContext) => Promise<void>;
 	let shutdownSession!: typeof startSession;
+	const reviewStartArguments: unknown[][] = [];
 	const reviews: Array<{
 		decide: (result: PlanReviewDecision) => void;
 		claimed: boolean;
@@ -52,7 +53,8 @@ function createHarness(reviewStatusPath: string, options: { uniqueReviews?: bool
 		},
 	};
 	spyOn(browserRuntime, "loadPlannotatorBrowser").mockResolvedValue({
-		startPlanReviewBrowserSession: async () => {
+		startPlanReviewBrowserSession: async (...args: unknown[]) => {
+			reviewStartArguments.push(args);
 			const review = { decide: (_result: PlanReviewDecision) => {}, claimed: false, actions: [] as string[], unsubscribe: mock(() => undefined) };
 			reviews.push(review);
 			const reviewId = options.uniqueReviews ? `review-${reviews.length}` : "new-review";
@@ -89,6 +91,7 @@ function createHarness(reviewStatusPath: string, options: { uniqueReviews?: bool
 	return {
 		emit,
 		reviews,
+		reviewStartArguments,
 		shutdown: () => shutdownSession({}, {} as ExtensionContext),
 		start: () => startSession({}, {} as ExtensionContext),
 		open: () => request("plan-review", { planContent: "Review this plan" }),
@@ -270,4 +273,12 @@ describe("event plan reviews close with their session", () => {
 		expect(await harness.query("new-review")).toMatchObject({ result: { status: "completed", approved: true } });
 		expect(harness.emit).toHaveBeenCalledTimes(1);
 	});
+});
+
+test("event plan-review does not opt into the execution model picker", async () => {
+	const harness = createHarness(statusPath());
+	await harness.start();
+	await harness.open();
+	expect(harness.reviewStartArguments[0]).toHaveLength(2);
+	await harness.shutdown();
 });

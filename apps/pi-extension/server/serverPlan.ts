@@ -64,12 +64,38 @@ import { warmFileListCache } from "../generated/resolve-file.ts";
 import { isArchiveDocumentMutation } from "../generated/archive-mode.ts";
 import type { SessionBridge } from "../generated/ai/session-bridge.ts";
 
+/** One entry of the host's model catalog, as the reviewer's picker needs it. */
+export interface PlanModelOption {
+	provider: string;
+	id: string;
+	name: string;
+}
+
+/**
+ * Read an approve body's `modelSwitch`. Only provider and id are load-bearing
+ * (the host resolves the model from them); a name is display text and falls
+ * back to the id, so a malformed name never rejects a valid pick.
+ */
+function readModelSwitch(value: unknown): PlanModelOption | undefined {
+	if (typeof value !== "object" || value === null) return undefined;
+	const { provider, id, name } = value as Record<string, unknown>;
+	if (typeof provider !== "string" || typeof id !== "string") return undefined;
+	if (!provider || !id) return undefined;
+	return { provider, id, name: typeof name === "string" && name ? name : id };
+}
+
 export interface PlanReviewDecision {
 	approved: boolean;
 	feedback?: string;
 	savedPath?: string;
 	agentSwitch?: string;
 	permissionMode?: string;
+	/**
+	 * The model the reviewer picked to run the plan with (`/api/approve` body
+	 * `modelSwitch`). Absent means "keep whatever the phase config resolves",
+	 * which is the behavior an approval had before the picker existed.
+	 */
+	modelSwitch?: PlanModelOption;
 	/** The reviewer only answered the plan's questions (`answersOnly: true` on /api/deny). */
 	answersOnly?: boolean;
 	/**
@@ -132,6 +158,10 @@ export async function startPlanReviewServer(options: {
 	 * /api/plan/revision; off by default so a review nobody revises never polls.
 	 */
 	planRevisions?: boolean;
+	/** Model catalog for the approval picker; empty hides the picker. */
+	models?: PlanModelOption[];
+	/** The model in effect now, so the picker can mark it. */
+	currentModel?: PlanModelOption;
 }): Promise<PlanServerResult> {
 	const gitUser = detectGitUser();
 	const sharingEnabled =
@@ -489,11 +519,22 @@ export async function startPlanReviewServer(options: {
 			}
 		} else if (url.pathname === "/api/agents" && req.method === "GET") {
 			json(res, { agents: [] });
+		} else if (url.pathname === "/api/models" && req.method === "GET") {
+			// The approval picker's catalog: what the host can actually run right
+			// now, plus the model in effect so the picker can preselect it.
+			json(res, {
+				models: options.models ?? [],
+				current: options.currentModel ?? null,
+			});
 		} else if (url.pathname === "/favicon.png") {
 			handleFavicon(res);
 		} else if (url.pathname === "/api/save-notes" && req.method === "POST") {
 			await handleSaveNotesRequest(req, res);
 		} else if (url.pathname === "/api/approve" && req.method === "POST") {
+			if (!isSameOriginOrNoOrigin(req.headers.origin ?? null, req.headers.host ?? "", req.headers["sec-fetch-site"])) {
+				json(res, { error: "Cross-origin approvals are not allowed" }, 403);
+				return;
+			}
 			if (refuseClosedReview(res)) return;
 			if (decisionSettled) {
 				json(res, { ok: true, duplicate: true });
@@ -501,6 +542,7 @@ export async function startPlanReviewServer(options: {
 			}
 			let feedback: string | undefined;
 			let agentSwitch: string | undefined;
+			let modelSwitch: PlanModelOption | undefined;
 			let requestedPermissionMode: string | undefined;
 			let planSaveEnabled = true;
 			let planSaveCustomPath: string | undefined;
@@ -522,6 +564,7 @@ export async function startPlanReviewServer(options: {
 				draftGeneration = readDraftGenerationFromBody(body);
 				if (body.feedback) feedback = body.feedback as string;
 				if (body.agentSwitch) agentSwitch = body.agentSwitch as string;
+				modelSwitch = readModelSwitch(body.modelSwitch);
 				if (body.permissionMode)
 					requestedPermissionMode = body.permissionMode as string;
 				if (body.planSave !== undefined) {
@@ -590,6 +633,7 @@ export async function startPlanReviewServer(options: {
 				feedback,
 				savedPath,
 				agentSwitch,
+				modelSwitch,
 				permissionMode: effectivePermissionMode,
 			});
 			json(res, { ok: true, savedPath });

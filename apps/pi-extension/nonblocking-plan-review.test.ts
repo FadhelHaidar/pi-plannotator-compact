@@ -16,7 +16,7 @@
  *    the session back into execution.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import plannotator, { type PlannotatorExtensionDeps } from "./index.ts";
@@ -50,8 +50,12 @@ function createHarness(cwd: string, waitForReviewStart?: Promise<void>) {
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown>>();
 	const entries: Array<{ type: string; data: any }> = [];
 	const sentUserMessages: Array<{ text: string; options: unknown }> = [];
+	const modelCalls: Array<{ provider: string; id: string }> = [];
 	const reviews: FakeReview[] = [];
-	const state = { activeTools: ["read", "bash", "edit", "write"] };
+	const warnings: string[] = [];
+	const reviewOptions: unknown[] = [];
+	const order: string[] = [];
+	const state = { activeTools: ["read", "bash", "edit", "write"], failure: "", currentModel: "original", thinking: "medium", modelSwitchGate: undefined as Promise<void> | undefined };
 
 	const pi = {
 		events: { on: () => undefined, emit: () => undefined },
@@ -65,13 +69,21 @@ function createHarness(cwd: string, waitForReviewStart?: Promise<void>) {
 		getFlag: () => true,
 		getActiveTools: () => [...state.activeTools],
 		setActiveTools: (next: string[]) => { state.activeTools = [...next]; },
-		getThinkingLevel: () => "medium",
-		setThinkingLevel: () => undefined,
-		setModel: async () => true,
+		getThinkingLevel: () => state.thinking,
+		setThinkingLevel: (level: string) => { state.thinking = level; },
+		setModel: async (model: { provider: string; id: string }) => {
+			modelCalls.push({ provider: model.provider, id: model.id });
+			order.push(`model:${model.id}`);
+			if (model.id === "picked") await state.modelSwitchGate;
+			if (model.id === "picked" && state.failure === "throw") throw new Error("Provider unavailable");
+			if (model.id === "picked" && state.failure === "false") return false;
+			state.currentModel = model.id;
+			return true;
+		},
 		getCommands: () => [],
 		appendEntry: (type: string, data: unknown) => entries.push({ type, data }),
 		sendMessage: () => undefined,
-		sendUserMessage: (text: string, options: unknown) => sentUserMessages.push({ text, options }),
+		sendUserMessage: (text: string, options: unknown) => { order.push(`send:${state.currentModel}`); sentUserMessages.push({ text, options }); },
 	};
 
 	const ctx = {
@@ -82,8 +94,8 @@ function createHarness(cwd: string, waitForReviewStart?: Promise<void>) {
 		isIdle: () => true,
 		hasPendingMessages: () => false,
 		abort: () => undefined,
-		model: undefined,
-		modelRegistry: { find: () => undefined },
+		model: { provider: "test", id: "original", name: "Original" },
+		modelRegistry: { find: (provider: string, id: string) => id === "picked" && state.failure === "missing" ? undefined : ({ provider, id, name: `${provider}/${id}` }) },
 		sessionManager: {
 			getBranch: () => [],
 			getEntries: () => [],
@@ -92,14 +104,15 @@ function createHarness(cwd: string, waitForReviewStart?: Promise<void>) {
 			getSessionName: () => undefined,
 		},
 		ui: {
-			notify: () => undefined,
+			notify: (message: string) => { warnings.push(message); },
 			setStatus: () => undefined,
 			setWidget: () => undefined,
 			theme: { fg: (_color: string, text: string) => text, strikethrough: (text: string) => text },
 		},
 	};
 
-	const startPlanReview: NonNullable<PlannotatorExtensionDeps["startPlanReview"]> = async (_ctx, planContent) => {
+	const startPlanReview: NonNullable<PlannotatorExtensionDeps["startPlanReview"]> = async (_ctx, planContent, _signal, options) => {
+		reviewOptions.push(options);
 		let resolve!: (result: PlanReviewDecision) => void;
 		let reject!: (err: Error) => void;
 		let waiting = false;
@@ -158,6 +171,11 @@ function createHarness(cwd: string, waitForReviewStart?: Promise<void>) {
 		reviews,
 		entries,
 		sentUserMessages,
+		modelCalls,
+		warnings,
+		reviewOptions,
+		state,
+		order,
 		lastPhase,
 		async shutdown() {
 			for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, ctx);
@@ -195,9 +213,13 @@ function createHarness(cwd: string, waitForReviewStart?: Promise<void>) {
 
 const PLAN = "# Plan\n\n- [ ] Implement the change\n";
 
-async function plannedSession() {
+async function plannedSession(config?: unknown) {
 	const cwd = makeTempDir("plannotator-nonblocking-");
 	writeFileSync(join(cwd, "PLAN.md"), PLAN);
+	if (config) {
+		mkdirSync(join(cwd, ".pi"));
+		writeFileSync(join(cwd, ".pi", "plannotator.json"), JSON.stringify(config));
+	}
 	const harness = createHarness(cwd);
 	await harness.start();
 	return { cwd, harness };
@@ -234,7 +256,29 @@ describe("non-blocking plan review", () => {
 		expect(await harness.writeAttempt("src/app.ts")).toBeUndefined();
 	});
 
-	test("a deny arrives as the denied prompt and keeps planning; an answers-only deny uses the answered prompt", async () => {
+	test("the approval's model pick is applied before execution starts", async () => {
+		const { harness } = await plannedSession();
+		await harness.submit("PLAN.md");
+		harness.reviews[0]!.decide({
+			approved: true,
+			modelSwitch: { provider: "google", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+		});
+		await harness.settle(() => harness.sentUserMessages.length > 0);
+
+		expect(harness.modelCalls.at(-1)).toEqual({ provider: "google", id: "gemini-2.5-flash" });
+		expect(harness.lastPhase()).toBe("executing");
+	});
+
+	test("an approval without a model pick switches nothing", async () => {
+		const { harness } = await plannedSession();
+		await harness.submit("PLAN.md");
+		harness.reviews[0]!.decide({ approved: true });
+		await harness.settle(() => harness.sentUserMessages.length > 0);
+
+		expect(harness.modelCalls.every(model => model.id === "original")).toBe(true);
+	});
+
+	test("a deny never applies a model pick", async () => {
 		const { harness } = await plannedSession();
 		await harness.submit("PLAN.md");
 		harness.reviews[0]!.decide({ approved: false, feedback: "Split step one." });
@@ -371,4 +415,80 @@ test("planning ends during startup: the orphan review is notified before stop", 
 	await opening;
 	expect(harness.reviews[0]!.actions).toEqual(["close", "stop"]);
 	expect(harness.sentUserMessages).toEqual([]);
+});
+
+const PHASE_CONFIG = {
+	phases: {
+		planning: { model: { provider: "test", id: "planning" }, thinking: "high" },
+		executing: { model: { provider: "test", id: "executing" }, thinking: "low" },
+	},
+};
+const PICK = { provider: "test", id: "picked", name: "Picked" };
+
+for (const failure of ["missing", "false", "throw"]) {
+	test(`explicit model ${failure} keeps planning locked and allows resubmission`, async () => {
+		const { harness } = await plannedSession(PHASE_CONFIG);
+		await harness.submit("PLAN.md");
+		harness.state.failure = failure;
+		harness.reviews[0]!.decide({ approved: true, modelSwitch: PICK });
+		await harness.settle(() => harness.warnings.some(message => message.includes("selection failed")));
+		expect(harness.warnings.join("\n")).toContain("resubmit the plan to reopen review");
+		expect(harness.lastPhase()).toBe("planning");
+		expect(harness.state.currentModel).toBe("planning");
+		expect(harness.state.thinking).toBe("high");
+		expect(harness.sentUserMessages).toEqual([]);
+		expect(harness.entries.some(entry => entry.type === "plannotator-execute")).toBe(false);
+		expect((await harness.writeAttempt("src/app.ts"))?.block).toBe(true);
+		expect(harness.modelCalls.some(model => model.id === "executing")).toBe(false);
+		harness.state.failure = "";
+		const resubmitted = await harness.submit("PLAN.md");
+		expect(resubmitted.details.pending).toBe(true);
+		expect(harness.reviews).toHaveLength(2);
+		harness.reviews[1]!.decide({ approved: true, modelSwitch: PICK });
+		await harness.settle(() => harness.sentUserMessages.length > 0);
+		expect(harness.lastPhase()).toBe("executing");
+		expect(harness.state.currentModel).toBe("picked");
+		expect(harness.state.thinking).toBe("low");
+		expect(harness.order.slice(-2)).toEqual(["model:picked", "send:picked"]);
+		expect(await harness.writeAttempt("src/app.ts")).toBeUndefined();
+	});
+}
+
+for (const cancellation of ["leave", "leave-and-reenter", "shutdown"]) {
+	test(`approval cannot start execution after ${cancellation} during a model switch`, async () => {
+		const { harness } = await plannedSession(PHASE_CONFIG);
+		let release!: () => void;
+		harness.state.modelSwitchGate = new Promise<void>(resolve => { release = resolve; });
+		await harness.submit("PLAN.md");
+		harness.reviews[0]!.decide({ approved: true, modelSwitch: PICK });
+		await harness.settle(() => harness.order.includes("model:picked"));
+		expect(harness.order).toContain("model:picked");
+		if (cancellation === "shutdown") await harness.shutdown();
+		else {
+			await harness.togglePlanMode();
+			if (cancellation === "leave-and-reenter") await harness.togglePlanMode();
+		}
+		release();
+		await harness.settle(() => harness.state.currentModel === "picked");
+		expect(harness.state.currentModel).toBe("picked");
+		expect(harness.sentUserMessages).toEqual([]);
+		expect(harness.entries.some(entry => entry.type === "plannotator-execute")).toBe(false);
+		expect(harness.lastPhase()).toBe(cancellation === "leave" ? "idle" : "planning");
+	});
+}
+
+test("execution settings restore the original model then apply the executing config before sending", async () => {
+	const { harness } = await plannedSession(PHASE_CONFIG);
+	await harness.submit("PLAN.md");
+	expect(harness.reviewOptions[0]).toMatchObject({ modelPicker: true });
+	harness.reviews[0]!.decide({ approved: true });
+	await harness.settle(() => harness.sentUserMessages.length > 0);
+	expect(harness.order).toEqual(["model:original", "model:planning", "model:original", "model:executing", "send:executing"]);
+	expect(harness.state.thinking).toBe("low");
+});
+
+test("external handoff does not opt into the model picker", async () => {
+	const { harness } = await plannedSession({ executionMode: "external" });
+	await harness.submit("PLAN.md");
+	expect(harness.reviewOptions[0]).toMatchObject({ modelPicker: false });
 });

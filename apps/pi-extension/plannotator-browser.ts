@@ -19,6 +19,8 @@ import {
 	startPlanReviewServer,
 	startReviewServer,
 	type DiffType,
+	type PlanModelOption,
+	type PlanReviewDecision,
 	type PlanServerResult,
 	type VcsSelection,
 	unstageFile,
@@ -63,17 +65,7 @@ export {
 } from "./plannotator-browser-runtime.ts";
 
 export type AnnotateMode = "annotate" | "annotate-folder" | "annotate-last" | "annotate-app" | "annotate-bundle";
-export interface PlanReviewDecision {
-	approved: boolean;
-	feedback?: string;
-	savedPath?: string;
-	agentSwitch?: string;
-	permissionMode?: string;
-	/** The reviewer only answered the plan's questions (`answersOnly: true` on /api/deny). */
-	answersOnly?: boolean;
-	/** The exact plan text an approval was made on (the revision on screen). */
-	plan?: string;
-}
+export type { PlanReviewDecision };
 
 export interface BrowserDecisionSession<T> {
 	url: string;
@@ -362,11 +354,37 @@ export function startBrowserDecisionSession<T>(
 	};
 }
 
+/**
+ * The model catalog the approval picker offers: models this host can actually
+ * run now, plus the model in effect so the picker can mark it. A registry that
+ * throws or is empty collapses to "no picker", never to a failed review.
+ */
+function planModelCatalog(ctx: ExtensionContext): {
+	models: PlanModelOption[];
+	currentModel?: PlanModelOption;
+} {
+	let models: PlanModelOption[] = [];
+	try {
+		models = ctx.modelRegistry.getAvailable().map((model) => ({
+			provider: model.provider,
+			id: model.id,
+			name: model.name,
+		}));
+	} catch {
+		models = [];
+	}
+	const current = ctx.model
+		? { provider: ctx.model.provider, id: ctx.model.id, name: ctx.model.name }
+		: undefined;
+	if (current) return { models, currentModel: current };
+	return { models };
+}
+
 export async function startPlanReviewBrowserSession(
 	ctx: ExtensionContext,
 	planContent: string,
 	signal?: AbortSignal,
-	options: { sessionBridge?: SessionBridge; planRevisions?: boolean } = {},
+	options: { sessionBridge?: SessionBridge; planRevisions?: boolean; modelPicker?: boolean } = {},
 ): Promise<PlanReviewBrowserSession> {
 	if (!ctx.hasUI) {
 		throw new Error("Plannotator browser review is unavailable in this session.");
@@ -385,6 +403,7 @@ export async function startPlanReviewBrowserSession(
 		pasteApiUrl: process.env.PLANNOTATOR_PASTE_URL || undefined,
 		sessionBridge: options.sessionBridge,
 		planRevisions: options.planRevisions,
+		...(options.modelPicker ? planModelCatalog(ctx) : {}),
 	}));
 
 	const session = startBrowserDecisionSession(server, ctx, server.waitForDecision, signal);
@@ -587,13 +606,13 @@ async function createCodeReviewBrowserSession(
 							for (const entry of worktreePool?.entries() ?? []) {
 								spawnSync("git", ["worktree", "remove", "--force", entry.path], { cwd: wtRepoDir });
 							}
-						} catch {}
-						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch {}
+						} catch { /* best-effort cleanup: never mask the error that got us here */ }
+						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch { /* best-effort cleanup: never mask the error that got us here */ }
 					};
 					worktreeCleanup = async () => {
 						if (exitHandler) { process.removeListener("exit", exitHandler); exitHandler = undefined; }
 						if (worktreePool) await worktreePool.cleanup(reviewRuntime);
-						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch {}
+						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch { /* best-effort cleanup: never mask the error that got us here */ }
 					};
 					process.once("exit", exitHandler);
 				} else {
@@ -630,11 +649,11 @@ async function createCodeReviewBrowserSession(
 					await reviewRuntime.runGit(["update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath });
 
 					exitHandler = () => {
-						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch {}
+						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch { /* best-effort cleanup: never mask the error that got us here */ }
 					};
 					worktreeCleanup = () => {
 						if (exitHandler) { process.removeListener("exit", exitHandler); exitHandler = undefined; }
-						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch {}
+						if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch { /* best-effort cleanup: never mask the error that got us here */ }
 					};
 					process.once("exit", exitHandler);
 				}
@@ -650,7 +669,7 @@ async function createCodeReviewBrowserSession(
 				ctx.ui.notify(`Local checkout failed; using the remote diff instead: ${detail}`, "warning");
 				setCodeReviewProgress(ctx, "Starting code review from remote diff...");
 				if (exitHandler) { process.removeListener("exit", exitHandler); exitHandler = undefined; }
-				if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch {}
+				if (sessionDir) try { rmSync(sessionDir, { recursive: true, force: true }); } catch { /* best-effort cleanup: never mask the error that got us here */ }
 				agentCwd = undefined;
 				worktreePool = undefined;
 				worktreeCleanup = undefined;
