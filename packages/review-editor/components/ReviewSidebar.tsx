@@ -477,6 +477,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
               : undefined}
             copyText={annotation.text ? commentCopyText(annotation, scope) : undefined}
             onDelete={() => onDeleteAnnotation(annotation.id)}
+            selected={isSelected}
           />
         )}
       </div>
@@ -530,7 +531,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
             {renderInlineMarkdown(note)}
           </div>
         )}
-        <CommentActions copyText={note || undefined} onDelete={onDelete} />
+        <CommentActions copyText={note || undefined} onDelete={onDelete} selected={isSelected} />
       </div>
     );
   }

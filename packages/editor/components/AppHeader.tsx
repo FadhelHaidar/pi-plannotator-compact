@@ -6,6 +6,8 @@ import { FeedbackButton, ApproveButton, ExitButton } from '@plannotator/ui/compo
 import { ApproveDropdown } from '@plannotator/ui/components/ApproveDropdown';
 import { DecisionControl, type DecisionHandler } from '@plannotator/ui/components/DecisionControl';
 import { QuestionProgressChip } from '@plannotator/ui/components/QuestionProgressChip';
+import { PlanModelPicker } from '@plannotator/ui/components/PlanModelPicker';
+import type { PlanModelOption } from '@plannotator/ui/hooks/usePlanModels';
 import type { DecisionActionId, DecisionSpec } from '@plannotator/ui/utils/decisionSpec';
 import { Settings } from '@plannotator/ui/components/Settings';
 import { PlanHeaderMenu } from '@plannotator/ui/components/PlanHeaderMenu';
@@ -84,6 +86,13 @@ interface AppHeaderProps {
   canShareCurrentSession: boolean;
   agentName: string;
   availableAgents: Agent[];
+  /** Approval model picker: absent when the host reports no model catalog. */
+  planModelPicker?: {
+    models: PlanModelOption[];
+    current: PlanModelOption | null;
+    value: PlanModelOption | null;
+    onChange: (model: PlanModelOption | null) => void;
+  };
   showAnnotationsWarning: boolean;
   /** `:::question` progress: the "N/M answered" chip beside the decision
    *  control. Absent (or total 0): no chip. */
@@ -202,6 +211,7 @@ export const AppHeader = React.memo<AppHeaderProps>(({
   canShareCurrentSession,
   agentName,
   availableAgents,
+  planModelPicker,
   showAnnotationsWarning,
   questionProgress,
   feedbackLabel = 'Send Feedback',
@@ -353,6 +363,15 @@ export const AppHeader = React.memo<AppHeaderProps>(({
                 total={questionProgress.total}
                 hasOpen={questionProgress.hasOpen}
                 onJump={questionProgress.onJump}
+              />
+            )}
+            {!annotateMode && !isSharedSession && planModelPicker && (
+              <PlanModelPicker
+                models={planModelPicker.models}
+                current={planModelPicker.current}
+                value={planModelPicker.value}
+                onChange={planModelPicker.onChange}
+                disabled={isSubmitting}
               />
             )}
             {annotateMode ? (

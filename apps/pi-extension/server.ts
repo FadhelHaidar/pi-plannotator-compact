@@ -18,6 +18,8 @@ export {
 	startAnnotateServer,
 } from "./server/serverAnnotate.ts";
 export {
+	type PlanModelOption,
+	type PlanReviewDecision,
 	type PlanServerResult,
 	startPlanReviewServer,
 } from "./server/serverPlan.ts";

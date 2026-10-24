@@ -479,6 +479,7 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 	let sessionAlive = true;
 	/** The plan review waiting on the reviewer, if any (see PendingPlanReview). */
 	let pendingPlanReview: PendingPlanReview | null = null;
+	let planReviewGeneration = 0;
 	/** Resolved once per execution phase; undefined means widget-only. */
 	let todoProvider: TodoProvider | undefined;
 	/** Latch: no provider found, or one sync failed. Cleared on return to idle. */
@@ -688,10 +689,10 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 		}
 	}
 
-	async function restoreSavedState(ctx: ExtensionContext): Promise<void> {
+	async function restoreSavedState(ctx: ExtensionContext, preserveModel = false): Promise<void> {
 		if (!savedState) return;
 
-		if (savedState.model) {
+		if (savedState.model && !preserveModel) {
 			await applyModelRef(savedState.model, ctx, "restore");
 		}
 		pi.setThinkingLevel(savedState.thinkingLevel);
@@ -712,12 +713,12 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 	 */
 	async function applyPhaseConfig(
 		ctx: ExtensionContext,
-		opts: { restoreSavedState?: boolean; applyModelSettings?: boolean } = {},
+		opts: { restoreSavedState?: boolean; applyModelSettings?: boolean; preserveModel?: boolean } = {},
 	): Promise<void> {
 		const profile = getPhaseProfile();
 		const applyModelSettings = opts.applyModelSettings !== false;
 		if (applyModelSettings && opts.restoreSavedState !== false && savedState) {
-			await restoreSavedState(ctx);
+			await restoreSavedState(ctx, opts.preserveModel);
 		}
 
 		if (phase === "planning" || phase === "executing") {
@@ -748,7 +749,7 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 			}
 		}
 
-		if (applyModelSettings && profile?.model) {
+		if (applyModelSettings && !opts.preserveModel && profile?.model) {
 			await applyModelRef(profile.model, ctx, phase);
 		}
 
@@ -796,6 +797,8 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 	 * decision handler sees `settled` and stays silent.
 	 */
 	function stopPendingPlanReview(): void {
+		// Also invalidate a settled approval still awaiting a model switch.
+		planReviewGeneration += 1;
 		const review = pendingPlanReview;
 		if (!review) return;
 		pendingPlanReview = null;
@@ -1973,6 +1976,7 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 				session = await startPlanReview(ctx, planContent, undefined, {
 					sessionBridge: sessionBridgeFor(ctx, origin),
 					planRevisions: true,
+					modelPicker: resolveExecutionMode(plannotatorConfig) === "automatic",
 				});
 			} catch (err) {
 				const message = `Failed to start plan review UI: ${getStartupErrorMessage(err)}`;
@@ -2076,6 +2080,7 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 		// The decision belongs to this session's planning phase. A replaced or
 		// torn-down session, or one that left plan mode, gets nothing.
 		if (!sessionAlive || !isCtxAlive(ctx) || phase !== "planning") return;
+		const generation = planReviewGeneration;
 		const inputPath = review.filePath;
 		// The text the reviewer decided on: the server names it, the open
 		// review's own copy is the fallback (the same text after any push).
@@ -2105,6 +2110,20 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 				return;
 			}
 
+			// Resolve the explicit choice before releasing planning restrictions.
+			if (result.modelSwitch) {
+				try {
+					const { provider, id } = result.modelSwitch;
+					const model = ctx.modelRegistry.find(provider, id);
+					if (!model) throw new Error(`Model ${provider}/${id} not found.`);
+					if (!(await pi.setModel(model))) throw new Error(`No API key for ${provider}/${id}.`);
+					if (!sessionAlive || !isCtxAlive(ctx) || phase !== "planning" || generation !== planReviewGeneration) return;
+				} catch (err) {
+					safeNotify(ctx, `Plannotator: execution model selection failed: ${getStartupErrorMessage(err)} Still in planning; resubmit the plan to reopen review and choose an available model or Use execution settings.`, "warning");
+					return;
+				}
+			}
+
 			lastSubmittedPath = inputPath;
 			approvedPlanContent = planContent;
 			checklistItems = parseChecklist(planContent);
@@ -2118,7 +2137,8 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 			}
 			phase = "executing";
 			framingDelivered = false;
-			await applyPhaseConfig(ctx, { restoreSavedState: true });
+			// Keep the validated choice; thinking settings still follow the phase config.
+			await applyPhaseConfig(ctx, { restoreSavedState: true, preserveModel: !!result.modelSwitch });
 			pi.appendEntry("plannotator-execute", { lastSubmittedPath, approvedPlan: planContent });
 			persistState();
 
