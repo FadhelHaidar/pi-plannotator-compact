@@ -50,7 +50,6 @@
     "theme.css",
     "print.css",
     "styles.css",
-    "plannotator.webp",
     "HANDOFF.md",
     "!**/*.test.ts",
     "!**/*.test.tsx",

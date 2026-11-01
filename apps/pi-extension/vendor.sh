@@ -8,7 +8,7 @@ rm -rf generated
 mkdir -p generated generated/ai/providers
 
 # Modules that MOVED to @plannotator/core — vendor the real impl from core.
-for f in feedback-templates project diff-type review-prompt guide-prompt favicon forge-refs code-file annotatable annotation-threads diagram-anchor html-anchor markdown-structure question-block external-annotation agent-jobs agent-terminal source-save open-in-apps diff-paths diff-files guide guide-format guide-viewer-manifest compress crypto; do
+for f in project diff-type review-prompt guide-prompt favicon forge-refs code-file annotatable annotation-threads diagram-anchor html-anchor markdown-structure question-block external-annotation agent-jobs agent-terminal source-save open-in-apps diff-paths diff-files guide guide-format guide-viewer-manifest compress crypto; do
   src="../../packages/core/$f.ts"
   printf '// @generated — DO NOT EDIT. Source: packages/core/%s.ts\n' "$f" | cat - "$src" > "generated/$f.ts"
 done
@@ -131,7 +131,7 @@ for f in index types provider session-manager endpoints context base-session ses
     > "generated/ai/$f.ts"
 done
 
-for f in command-path child-io pi-sdk pi-sdk-node pi-events pi-version; do
+for f in command-path child-io pi-sdk-node pi-events pi-version; do
   src="../../packages/ai/providers/$f.ts"
   printf '// @generated — DO NOT EDIT. Source: packages/ai/providers/%s.ts\n' "$f" | cat - "$src" \
     | sed "s|from ['\"]@plannotator/core/model-catalog['\"]|from '../model-catalog.ts'|g" \

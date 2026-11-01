@@ -1,7 +1,6 @@
 import React from 'react';
 import type { Origin } from '@plannotator/shared/agents';
 import type { Agent } from '@plannotator/ui/hooks/useAgents';
-import type { UpdateInfo } from '@plannotator/ui/hooks/useUpdateCheck';
 import { FeedbackButton, ApproveButton, ExitButton } from '@plannotator/ui/components/ToolbarButtons';
 import { ApproveDropdown } from '@plannotator/ui/components/ApproveDropdown';
 import { DecisionControl, type DecisionHandler } from '@plannotator/ui/components/DecisionControl';
@@ -162,8 +161,6 @@ interface AppHeaderProps {
 
   // PlanHeaderMenu config
   appVersion: string;
-  updateInfo?: UpdateInfo | null;
-  isWSL?: boolean;
   agentInstructionsEnabled: boolean;
   obsidianConfigured: boolean;
   bearConfigured: boolean;
@@ -252,8 +249,6 @@ export const AppHeader = React.memo<AppHeaderProps>(({
   onSaveToBear,
   onSaveToOctarine,
   appVersion,
-  updateInfo,
-  isWSL,
   agentInstructionsEnabled,
   obsidianConfigured,
   bearConfigured,
@@ -534,9 +529,7 @@ export const AppHeader = React.memo<AppHeaderProps>(({
 
         <PlanHeaderMenu
           appVersion={appVersion}
-          updateInfo={updateInfo}
           origin={origin}
-          isWSL={isWSL}
           onOpenSettings={onOpenSettings}
           onOpenExport={onOpenExport}
           onCopyAgentInstructions={onCopyAgentInstructions}

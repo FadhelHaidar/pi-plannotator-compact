@@ -55,7 +55,8 @@
     "review-editor.html",
     "LICENSE-MIT",
     "LICENSE-APACHE",
-    "NOTICE"
+    "NOTICE",
+    "!**/*.test.ts"
   ],
   "scripts": {
     "build": "cp ../hook/dist/index.html plannotator.html && cp ../hook/dist/review.html review-editor.html && bash vendor.sh"

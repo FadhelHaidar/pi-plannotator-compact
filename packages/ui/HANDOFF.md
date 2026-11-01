@@ -245,7 +245,7 @@ Don't import these in a host. Each hits hardcoded Plannotator endpoints:
 - `hooks/useLinkedDoc` — `/api/doc` directly (the `docPreviewFetcher` seam covers `InlineMarkdown`'s hover previews, **not** this full linked-doc overlay).
 - `hooks/useValidatedCodePaths` — `/api/doc/exists` (this is what `Viewer`'s `disableCodePathValidation` turns off).
 - `utils/sharing` — Plannotator's public paste service (share-URL feature).
-- `hooks/useUpdateCheck`, `components/MenuVersionSection`, `components/PlanHeaderMenu` — Plannotator release checks.
+- `components/MenuVersionSection`, `components/PlanHeaderMenu` — version + release-notes link.
 - `utils/planAgentInstructions`, `utils/reviewAgentInstructions` — generate agent instructions that curl Plannotator's local API.
 - `components/DecisionControl`, `utils/decisionSpec`, `hooks/useDismissablePopover` — session decision chrome for Plannotator's own approve/deny/exit endpoints (a host's session decisions are its own outcomes against its own backend).
 
