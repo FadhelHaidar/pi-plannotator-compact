@@ -25,8 +25,8 @@ import {
   resolvePlatformDecisionAction,
   resolveReviewDecisionAction,
 } from './reviewDecision';
-import { useUpdateCheck } from '@plannotator/ui/hooks/useUpdateCheck';
 import { claimAutoUpdateNotice, describeAutoUpdateNotice, parseAutoUpdateNotice, type AutoUpdateNotice } from '@plannotator/ui/utils/autoUpdateNotice';
+import { openExternalUrl } from '@plannotator/ui/utils/externalUrl';
 import { storage } from '@plannotator/ui/utils/storage';
 import { CompletionOverlay } from '@plannotator/ui/components/CompletionOverlay';
 import {
@@ -38,7 +38,6 @@ import {
 } from './utils/pendingExternalTab';
 import { PRPlatformIcon } from '@plannotator/ui/components/PRPlatformIcon';
 import { RepoIcon } from '@plannotator/ui/components/RepoIcon';
-import { PullRequestIcon } from '@plannotator/ui/components/PullRequestIcon';
 import { getPlatformLabel, getMRLabel, getMRNumberLabel, getDisplayRepo, getPRNumber, getPRPlatformCapabilities } from '@plannotator/shared/pr-types';
 import type { SemanticDiffAdvert } from '@plannotator/shared/semantic-diff-types';
 import type { CallFlowAdvert, CallFlowNode } from '@plannotator/shared/call-flow-types';
@@ -181,7 +180,7 @@ import {
 import type { DiffFile, AnnotationScrollTarget } from './types';
 import { annotationMatchesPrScope, proseAnnotationMatchesPr } from './utils/annotationScope';
 import { annotationNavigation, reanchorCodeAnnotations, restorableViewedFiles } from './utils/codeAnnotationAnchor';
-import type { DiffOption, WorktreeInfo, GitContext, SinceBaseSections, CommitDiffInfo, ReviewSourceKind } from '@plannotator/shared/types';
+import type { DiffOption, GitContext, SinceBaseSections, CommitDiffInfo, ReviewSourceKind } from '@plannotator/shared/types';
 import { SectionsPanel } from './components/SectionsPanel';
 import { CommitsPanel } from './components/CommitsPanel';
 import { useCommitsView } from './hooks/useCommitsView';
@@ -591,7 +590,7 @@ const ReviewApp: React.FC = () => {
   const aiUIEnabled = aiEnabled === true;
   const guideVisible = aiUIEnabled && guideOpen;
   const [gitUser, setGitUser] = useState<string | undefined>();
-  const [isWSL, setIsWSL] = useState(false);
+  const [, setIsWSL] = useState(false);
   const [reviewMode, setReviewMode] = useState<string | null>(null);
   const [diffType, setDiffType] = useState<string>('uncommitted');
   const [gitContext, setGitContext] = useState<GitContext | null>(null);
@@ -672,7 +671,7 @@ const ReviewApp: React.FC = () => {
   // a spec update while a dialog is up can never show or confirm stale copy.
   const [compactDecisionComposer, setCompactDecisionComposer] = useState<DecisionMenuItem['id'] | null>(null);
   const [compactDecisionConfirm, setCompactDecisionConfirm] = useState<DecisionMenuItem['id'] | null>(null);
-  const [sharingEnabled, setSharingEnabled] = useState(true);
+  const [, setSharingEnabled] = useState(true);
   // Server capability advert (spec §6.4): does this session's decision
   // consumer deliver approve-time feedback? Defaults false so an old server
   // that never sends the field renders no approve-carrying items (PR3
@@ -829,28 +828,6 @@ const ReviewApp: React.FC = () => {
       ? `You can't request changes on your own pull request on ${platformLabel}.`
       : undefined;
   const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
-  const updateInfo = useUpdateCheck();
-  const updateToastShown = useRef(false);
-  // True when the compiled CLI will install new releases itself (#1634); the
-  // "new version available" toast is then redundant and stays hidden. The
-  // payload lands long before the GitHub answer plus the toast delay, and a
-  // late flip still cancels the pending toast through the effect cleanup.
-  const [autoUpdateActive, setAutoUpdateActive] = useState(false);
-  useEffect(() => {
-    if (autoUpdateActive) return;
-    if (updateInfo?.updateAvailable && !updateInfo.dismissed && !updateToastShown.current) {
-      updateToastShown.current = true;
-      const t = setTimeout(() => {
-        toast('A new version of Plannotator is available', {
-          description: 'Open the Options menu to update.',
-          duration: 4000,
-          position: 'top-right',
-          classNames: { toast: '!w-auto', description: '!text-foreground/70' },
-        });
-      }, 1500);
-      return () => clearTimeout(t);
-    }
-  }, [updateInfo?.updateAvailable, updateInfo?.dismissed, autoUpdateActive]);
   // One-time notice after a background auto-update (#1634); the compiled
   // CLI's server attaches it to the initial payload.
   const [autoUpdateNotice, setAutoUpdateNotice] = useState<AutoUpdateNotice | undefined>();
@@ -863,7 +840,7 @@ const ReviewApp: React.FC = () => {
         description,
         duration: autoUpdateNotice.kind === 'failed' ? 10000 : 6000,
         position: 'top-right',
-        action: { label: 'Release notes', onClick: () => window.open(autoUpdateNotice.releaseUrl, '_blank', 'noopener,noreferrer') },
+        action: { label: 'Release notes', onClick: () => openExternalUrl(autoUpdateNotice.releaseUrl) },
         classNames: { toast: '!w-auto', description: '!text-foreground/70' },
       });
     }, 1500);
@@ -2330,7 +2307,6 @@ const ReviewApp: React.FC = () => {
         // toggle; OpenCode, Pi and dev runs send no autoUpdateSupported.
         setAutoUpdateSetting(data.autoUpdateSupported === true && typeof data.serverConfig?.autoUpdate === 'boolean' ? { env: data.serverConfig.autoUpdateEnv } : undefined);
         agentTool.adopt(data.serverConfig);
-        setAutoUpdateActive(data.autoUpdateActive === true);
         setAutoUpdateNotice(parseAutoUpdateNotice(data.autoUpdateNotice));
         setSnapshotId(data.snapshotId);
         setAiEnabled(data.aiEnabled !== false);
@@ -4371,6 +4347,8 @@ const ReviewApp: React.FC = () => {
       setSubmitted(action === 'approve' ? 'approved' : 'feedback');
 
       if (platformOpenPR) {
+        // SAFETY: the browser window has every member TabOpener declares (open/tab
+        // surface); the cast only drops the DOM members it does not need.
         settlePendingTab(pendingTab, openUrls, window as unknown as TabOpener);
       } else {
         closePendingTab(pendingTab);
@@ -4418,6 +4396,7 @@ const ReviewApp: React.FC = () => {
   // synchronous up to openPendingTab: browsers only allow the tab while the
   // click's transient activation is live (#1583).
   const submitPlatformDialog = useCallback((action: PRReviewAction, plan: ReviewSubmission, generalComment: string) => {
+    // SAFETY: same as settlePendingTab above — window satisfies TabOpener's members only.
     const pendingTab = platformOpenPR
       ? openPendingTab(window as unknown as TabOpener, platformLabel)
       : null;
@@ -5320,9 +5299,6 @@ const ReviewApp: React.FC = () => {
               compactTouchLayout={isCompactTouchLayout}
               agentInstructionsEnabled={!!origin}
               appVersion={appVersion}
-              updateInfo={updateInfo}
-              origin={origin}
-              isWSL={isWSL}
             />
           </div>
         </header>
@@ -5814,8 +5790,6 @@ const ReviewApp: React.FC = () => {
 
         <div className="hidden" aria-hidden="true">
           <Settings
-            taterMode={false}
-            onTaterModeChange={() => {}}
             onIdentityChange={handleIdentityChange}
             origin={origin}
             mode="review"

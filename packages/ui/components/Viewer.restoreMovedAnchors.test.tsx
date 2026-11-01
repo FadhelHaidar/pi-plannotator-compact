@@ -56,7 +56,6 @@ async function restore(markdown: string, annotations: Annotation[]): Promise<Ann
         onSelectAnnotation={() => {}}
         selectedAnnotationId={null}
         mode="comment"
-        taterMode={false}
         disableCodePathValidation
         onRestoreReport={(report) => reports.push(report)}
       />,

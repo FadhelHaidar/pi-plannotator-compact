@@ -30,8 +30,6 @@ function Harness({ mode, initial, save }: {
   const [setting, setSetting] = useState(initial);
   return (
     <Settings
-      taterMode={false}
-      onTaterModeChange={() => {}}
       mode={mode}
       origin="pi"
       annotateParity={mode === 'annotate'}

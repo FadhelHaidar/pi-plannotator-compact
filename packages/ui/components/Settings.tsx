@@ -14,7 +14,6 @@ import {
   type AgentToolSetting,
 } from '../utils/agentToolSetting';
 import { loadDiffFont } from '../utils/diffFonts';
-import { TaterSpritePullup } from './TaterSpritePullup';
 import { getIdentity, regenerateIdentity, setCustomIdentity, isIdentityEditable } from '../utils/identity';
 import { GitUser } from '../icons/GitUser';
 import {
@@ -88,8 +87,6 @@ import { AnalysisLayerToggle } from './AnalysisLayerToggle';
 type SettingsTab = 'general' | 'theme' | 'git' | 'display' | 'analysis' | 'saving' | 'labels' | 'vim' | 'shortcuts' | 'ai' | 'files' | 'obsidian' | 'bear' | 'octarine' | 'comments' | 'hooks';
 
 interface SettingsProps {
-  taterMode: boolean;
-  onTaterModeChange: (enabled: boolean) => void;
   onIdentityChange?: (oldIdentity: string, newIdentity: string) => void;
   origin?: Origin | null;
   mode?: 'plan' | 'annotate' | 'review';
@@ -1002,7 +999,7 @@ const CommentsTab: React.FC = () => {
   );
 };
 
-export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange, onIdentityChange, origin, mode = 'plan', annotateParity = false, onUIPreferencesChange, externalOpen, onExternalClose, aiProviders = [], gitUser, autoUpdateSetting, agentToolSetting, onAgentToolChange, sinceBaseUnavailable, isCompactTouchLayout = false, onDetectObsidianVaults, agentTerminalAvailable = false, webmcpAvailable = false }) => {
+export const Settings: React.FC<SettingsProps> = ({ onIdentityChange, origin, mode = 'plan', annotateParity = false, onUIPreferencesChange, externalOpen, onExternalClose, aiProviders = [], gitUser, autoUpdateSetting, agentToolSetting, onAgentToolChange, sinceBaseUnavailable, isCompactTouchLayout = false, onDetectObsidianVaults, agentTerminalAvailable = false, webmcpAvailable = false }) => {
   const webmcpTools = useWebMcpToolsEnabled();
   const autoUpdate = useConfigValue('autoUpdate');
   const [showDialog, setShowDialog] = useState(false);
@@ -1311,7 +1308,6 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
               setShowDialog(false);
             }}
           >
-            {taterMode && <TaterSpritePullup />}
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h3 id="plannotator-settings-title" className="font-semibold text-sm">Settings</h3>
               <button
@@ -1897,27 +1893,6 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                           </div>
                         );
                       })()}
-                    </div>
-
-                    <div className="border-t border-border" />
-
-                    {/* Tater Mode */}
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium">Tater Mode</div>
-                      <button
-                        role="switch"
-                        aria-checked={taterMode}
-                        onClick={() => onTaterModeChange(!taterMode)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          taterMode ? 'bg-primary' : 'bg-muted'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                            taterMode ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
                     </div>
                   </>
                 )}

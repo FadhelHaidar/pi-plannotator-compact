@@ -37,6 +37,7 @@ export const PlanModelPicker: React.FC<PlanModelPickerProps> = ({
   return (
     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <span className="sr-only md:not-sr-only">Run with</span>
+      {/* shortcut: native popup colors remain OS-controlled on some platforms; custom rendering needs keyboard/accessibility parity. */}
       <select
         value={value ? planModelKey(value) : ''}
         disabled={disabled}
@@ -45,7 +46,7 @@ export const PlanModelPicker: React.FC<PlanModelPickerProps> = ({
           const key = event.target.value;
           onChange(key ? models.find((model) => planModelKey(model) === key) ?? null : null);
         }}
-        className="h-8 max-w-[16rem] rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors focus:border-primary disabled:opacity-50"
+        className="h-8 max-w-[16rem] rounded-md border border-border bg-background px-2 text-xs text-foreground transition-colors focus:border-foreground focus-visible:[outline-color:var(--foreground)] disabled:opacity-50 [&_option]:bg-background [&_option]:text-foreground [&_option:checked]:bg-muted [&_option:checked]:text-foreground"
       >
         <option value="">Use execution settings</option>
         {groups.map(({ provider, entries }) => (

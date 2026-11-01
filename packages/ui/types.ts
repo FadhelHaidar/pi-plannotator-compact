@@ -442,9 +442,18 @@ export interface SelectedLineRange {
 // AI Chat (inline AI on diffs)
 // ---------------------------------------------------------------------------
 
+export interface AIAttachment {
+  /** Stored reference from the upload transport (a server path by default). */
+  path: string;
+  name: string;
+}
+
 export interface AIQuestion {
   id: string;
   prompt: string;
+  /** Images the user attached to this question; shown in the chat, appended to
+   *  the agent-facing prompt as `[image] <path>` when the question is sent. */
+  images?: AIAttachment[];
   scope?: {
     kind: 'general' | 'selection';
     label?: string;

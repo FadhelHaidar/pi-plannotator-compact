@@ -1,7 +1,10 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AIChatEntry, PendingPermission } from '../../hooks/useAIChat';
+import type { AIAttachment } from '../../types';
 import type { AIProviderOption } from '../../utils/aiProvider';
 import { formatRelativeTime, renderChatMarkdown } from '../../utils/aiChatFormat';
+import { getUploadTransport } from '../../utils/upload';
+import { ImageThumbnail, getImageSrc } from '../ImageThumbnail';
 import { OverlayScrollArea } from '../OverlayScrollArea';
 import { SparklesIcon } from '../SparklesIcon';
 import { AIProviderBar } from './AIProviderBar';
@@ -12,7 +15,7 @@ interface DocumentAIChatPanelProps {
   messages: AIChatEntry[];
   isCreatingSession: boolean;
   isStreaming: boolean;
-  onAskGeneral?: (question: string) => void;
+  onAskGeneral?: (question: string, images?: AIAttachment[]) => void;
   /** Stop the in-flight answer. When provided, the input shows a Stop button while streaming. */
   onStop?: () => void;
   permissionRequests?: PendingPermission[];
@@ -71,6 +74,7 @@ export const DocumentAIChatPanel: React.FC<DocumentAIChatPanelProps> = ({
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [generalInput, setGeneralInput] = useState('');
+  const [generalImages, setGeneralImages] = useState<AIAttachment[]>([]);
   const latestMessage = messages[messages.length - 1];
   const latestResponseText = latestMessage?.response.text ?? '';
 
@@ -82,10 +86,11 @@ export const DocumentAIChatPanel: React.FC<DocumentAIChatPanelProps> = ({
 
   const handleGeneralSubmit = useCallback(() => {
     const question = generalInput.trim();
-    if (!question || !onAskGeneral) return;
-    onAskGeneral(question);
+    if ((!question && generalImages.length === 0) || !onAskGeneral) return;
+    onAskGeneral(question, generalImages);
     setGeneralInput('');
-  }, [generalInput, onAskGeneral]);
+    setGeneralImages([]);
+  }, [generalInput, generalImages, onAskGeneral]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -151,6 +156,9 @@ export const DocumentAIChatPanel: React.FC<DocumentAIChatPanelProps> = ({
           value={generalInput}
           onChange={setGeneralInput}
           onSubmit={handleGeneralSubmit}
+          images={generalImages}
+          onAddImage={(image) => setGeneralImages((prev) => [...prev, image])}
+          onRemoveImage={(path) => setGeneralImages((prev) => prev.filter((image) => image.path !== path))}
           disabled={isStreaming}
           isStreaming={isStreaming}
           onStop={onStop}
@@ -170,6 +178,7 @@ const DocumentQAPair = memo<{
     [response.text],
   );
   const scope = question.scope;
+  const questionImages = question.images ?? [];
 
   return (
     <div data-ai-message data-question-id={question.id} className="flex flex-col gap-1.5">
@@ -197,6 +206,15 @@ const DocumentQAPair = memo<{
           </p>
         )}
         <p className="text-xs text-foreground/80 whitespace-pre-wrap">{question.prompt}</p>
+        {questionImages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {questionImages.map((image) => (
+              <a key={image.path} href={getImageSrc(image.path)} target="_blank" rel="noreferrer" title={image.name}>
+                <ImageThumbnail path={image.path} size="md" showRemove={false} />
+              </a>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="group relative p-2.5 rounded-lg border border-border/50 bg-popover/50 hover:bg-muted/30 transition-colors">
@@ -271,11 +289,16 @@ const GeneralInput: React.FC<{
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  images?: AIAttachment[];
+  onAddImage?: (image: AIAttachment) => void;
+  onRemoveImage?: (path: string) => void;
   disabled?: boolean;
   isStreaming?: boolean;
   onStop?: () => void;
-}> = ({ value, onChange, onSubmit, disabled, isStreaming, onStop }) => {
+}> = ({ value, onChange, onSubmit, images = [], onAddImage, onRemoveImage, disabled, isStreaming, onStop }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const uploading = pendingUploads > 0;
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -284,21 +307,67 @@ const GeneralInput: React.FC<{
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [value]);
 
+  // Capture on the textarea so App.tsx's global paste handler cannot turn a
+  // pasted screenshot into a document attachment instead of part of the question.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || !onAddImage) return;
+    const handlePaste = (event: ClipboardEvent) => {
+      const item = Array.from(event.clipboardData?.items ?? []).find((entry) =>
+        entry.type.startsWith('image/'),
+      );
+      const file = item?.getAsFile();
+      if (!file) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPendingUploads((count) => count + 1);
+      getUploadTransport()
+        .upload(file)
+        .then((result) => {
+          if (result.path) onAddImage({ path: result.path, name: result.originalName || file.name || 'image' });
+        })
+        .catch((error) => console.error('Upload failed:', error))
+        .finally(() => setPendingUploads((count) => count - 1));
+    };
+    el.addEventListener('paste', handlePaste, true);
+    return () => el.removeEventListener('paste', handlePaste, true);
+  }, [onAddImage]);
+
   return (
     <div className="border-t border-border/50 p-2">
+      {(images.length > 0 || uploading) && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+          {images.map((image) => (
+            <span key={image.path} title={image.name}>
+              <ImageThumbnail
+                path={image.path}
+                size="md"
+                onRemove={onRemoveImage ? () => onRemoveImage(image.path) : undefined}
+              />
+            </span>
+          ))}
+          {uploading && <span className="text-[10px] text-muted-foreground">Uploading…</span>}
+        </div>
+      )}
       <div className="flex items-end gap-1.5">
         <textarea
           data-pn-mobile-editable="true"
           ref={textareaRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="Ask about this document..."
+          placeholder="Ask about this document, or paste a screenshot…"
           rows={1}
           className="flex-1 px-2.5 py-1.5 bg-muted rounded-md text-xs text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
           style={{ maxHeight: 120 }}
           disabled={disabled}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing && !disabled) {
+            if (
+              event.key === 'Enter' &&
+              (event.metaKey || event.ctrlKey) &&
+              !event.nativeEvent.isComposing &&
+              !disabled &&
+              !uploading
+            ) {
               event.preventDefault();
               onSubmit();
             }
@@ -318,7 +387,7 @@ const GeneralInput: React.FC<{
         ) : (
           <button
             onClick={onSubmit}
-            disabled={disabled || !value.trim()}
+            disabled={disabled || uploading || (!value.trim() && images.length === 0)}
             className="p-1.5 mb-px rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0"
             title={`Send (${submitHint})`}
             aria-label="Send AI question"

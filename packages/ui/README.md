@@ -223,7 +223,7 @@ overrides on `[data-sticky-actions]` still apply. Do not give the cluster
 such as table and code wrappers around a sticky float's stuck position.
 
 The config is intentionally typed rather than a React-node slot. Viewer reuses
-its existing `mode`, `inputMethod`, and `taterMode`; the config supplies only
+its existing `mode` and `inputMethod`; the config supplies only
 the state-change callbacks and optional `hideQuickLabel`. Compact toolstrips
 never render the Plannotator help modal. Hiding Quick Label does not clamp the
 mode, so hosts must still prevent stored `'quickLabel'` state from reaching

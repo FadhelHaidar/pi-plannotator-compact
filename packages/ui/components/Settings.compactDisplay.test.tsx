@@ -21,8 +21,6 @@ async function openDisplayTab(isCompactTouchLayout: boolean): Promise<void> {
   await act(async () => {
     root!.render(
       <Settings
-        taterMode={false}
-        onTaterModeChange={() => {}}
         mode="review"
         externalOpen
         isCompactTouchLayout={isCompactTouchLayout}

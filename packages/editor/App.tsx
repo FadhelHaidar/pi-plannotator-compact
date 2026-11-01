@@ -27,10 +27,11 @@ import {
 } from '@plannotator/shared/annotate-bundle';
 import { setExtraMarkdownExtensions } from '@plannotator/ui/utils/markdownExtensions';
 import { documentRendersHtml, htmlAssetRouteFromDocument, resolveHtmlLinkIntent } from '@plannotator/ui/utils/htmlLinkNavigation';
+import { openExternalUrl } from '@plannotator/ui/utils/externalUrl';
 import { ImageLightbox } from '@plannotator/ui/components/ImageLightbox';
 import { createPortal } from 'react-dom';
 import { annotateFileFeedback, annotateMessageFeedback, wrapFeedbackForClipboard, type AnnotateFeedbackTemplates } from '@plannotator/shared/feedback-templates';
-import { diagramDocumentBlocks, parseMarkdownToBlocks, exportAnnotations, exportLinkedDocAnnotations, exportEditorAnnotations, exportCodeFileAnnotations, exportMessageAnnotations, extractFrontmatter, wrapFeedbackForAgent, Frontmatter, type LinkedDocAnnotationEntry, type MessageAnnotationEntry } from '@plannotator/ui/utils/parser';
+import { diagramDocumentBlocks, parseMarkdownToBlocks, exportAnnotations, exportLinkedDocAnnotations, exportEditorAnnotations, exportCodeFileAnnotations, extractFrontmatter, wrapFeedbackForAgent, type LinkedDocAnnotationEntry, type MessageAnnotationEntry } from '@plannotator/ui/utils/parser';
 import { primeSkillCatalog, primeSkillContentsForExport } from '@plannotator/ui/utils/skillCatalog';
 import { Viewer, ViewerHandle } from '@plannotator/ui/components/Viewer';
 import type { AnnotationRestoreReport } from '@plannotator/ui/hooks/useAnnotationHighlighter';
@@ -42,13 +43,11 @@ import { SparklesIcon } from '@plannotator/ui/components/SparklesIcon';
 import { ExportModal } from '@plannotator/ui/components/ExportModal';
 import { ImportModal } from '@plannotator/ui/components/ImportModal';
 import { ConfirmDialog } from '@plannotator/ui/components/ConfirmDialog';
-import { Annotation, AnnotationType, Block, EditorMode, type CodeAnnotation, type DocumentRenderAs, type InputMethod, type ImageAttachment, type ActionsLabelMode } from '@plannotator/ui/types';
+import { Annotation, AnnotationType, EditorMode, type CodeAnnotation, type DocumentRenderAs, type InputMethod, type ImageAttachment, type ActionsLabelMode } from '@plannotator/ui/types';
 import { ThemeProvider } from '@plannotator/ui/components/ThemeProvider';
 import { Tooltip, TooltipProvider } from '@plannotator/ui/components/Tooltip';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
 import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
-import { TaterSpriteRunning } from '@plannotator/ui/components/TaterSpriteRunning';
-import { TaterSpritePullup } from '@plannotator/ui/components/TaterSpritePullup';
 import { useSharing } from '@plannotator/ui/hooks/useSharing';
 import { shareableDocumentMarkdown } from '@plannotator/ui/utils/sharing';
 import { getCallbackConfig, CallbackAction, executeCallback } from '@plannotator/ui/utils/callback';
@@ -60,10 +59,9 @@ import { getIdentity } from '@plannotator/ui/utils/identity';
 import { copyTextToClipboard } from '@plannotator/ui/utils/clipboard';
 import { configStore, useConfigValue } from '@plannotator/ui/config';
 import { CompletionOverlay } from '@plannotator/ui/components/CompletionOverlay';
-import { useUpdateCheck } from '@plannotator/ui/hooks/useUpdateCheck';
 import { claimAutoUpdateNotice, describeAutoUpdateNotice, parseAutoUpdateNotice, type AutoUpdateNotice } from '@plannotator/ui/utils/autoUpdateNotice';
 import { LookAndFeelAnnouncementDialog } from '@plannotator/ui/components/LookAndFeelAnnouncementDialog';
-import { getObsidianSettings, getEffectiveVaultPath, isObsidianConfigured, CUSTOM_PATH_SENTINEL } from '@plannotator/ui/utils/obsidian';
+import { getObsidianSettings, getEffectiveVaultPath, isObsidianConfigured } from '@plannotator/ui/utils/obsidian';
 import { getBearSettings } from '@plannotator/ui/utils/bear';
 import { getOctarineSettings, isOctarineConfigured } from '@plannotator/ui/utils/octarine';
 import { getDefaultNotesApp } from '@plannotator/ui/utils/defaultNotesApp';
@@ -101,7 +99,7 @@ import {
 import { useAgentToolSetting } from '@plannotator/ui/hooks/useAgentToolSetting';
 import { useLatchedTrue } from '@plannotator/ui/hooks/useLatchedTrue';
 import { buildDefaultPrompt, useAIChat } from '@plannotator/ui/hooks/useAIChat';
-import { getUIPreferences, type UIPreferences, type PlanWidth } from '@plannotator/ui/utils/uiPreferences';
+import { getUIPreferences, type PlanWidth } from '@plannotator/ui/utils/uiPreferences';
 import { getEditorMode, saveEditorMode } from '@plannotator/ui/utils/editorMode';
 import { getInputMethod, refreshInputMethodStamp, saveInputMethod } from '@plannotator/ui/utils/inputMethod';
 import { getHtmlChromeState, mergeHtmlChromeState, saveHtmlChromeState, shouldRestoreHtmlChrome } from '@plannotator/ui/utils/htmlChrome';
@@ -139,7 +137,7 @@ import { useSidebar, type SidebarTab } from '@plannotator/ui/hooks/useSidebar';
 import { usePlanDiff, type VersionInfo, type VersionEntry, type PlanDiffFetchers } from '@plannotator/ui/hooks/usePlanDiff';
 import { useLinkedDoc, type LinkedDocSessionState } from '@plannotator/ui/hooks/useLinkedDoc';
 import { useCodeFilePopout } from '@plannotator/ui/hooks/useCodeFilePopout';
-import { useAnnotationDraft, type DraftEditedDocument, type DraftSavedFileChange } from '@plannotator/ui/hooks/useAnnotationDraft';
+import { useAnnotationDraft, type DraftEditedDocument } from '@plannotator/ui/hooks/useAnnotationDraft';
 import { useDocumentDrafts } from './hooks/useDocumentDrafts';
 import { composeSessionDraft } from './documentDrafts';
 import { useArchive } from '@plannotator/ui/hooks/useArchive';
@@ -170,6 +168,7 @@ import {
 import type { GoalSetupBundle } from '@plannotator/shared/goal-setup';
 import type { AIContext } from '@plannotator/ai';
 import type { CommentAskAIContext } from '@plannotator/ui/components/CommentPopover';
+import type { AIAttachment } from '@plannotator/ui/types';
 import {
   hasSourceSaveConflictSnapshot,
   isSourceSaveFilePath,
@@ -558,10 +557,6 @@ const App: React.FC = () => {
   const [editorMode, setEditorMode] = useState<EditorMode>(getEditorMode);
   const [inputMethod, setInputMethod] = useState<InputMethod>(getInputMethod);
   const [compactInputMethod, setCompactInputMethod] = useState<InputMethod>(getInputMethod);
-  const [taterMode, setTaterMode] = useState(() => {
-    const stored = storage.getItem('plannotator-tater-mode');
-    return stored === 'true';
-  });
   const gridEnabled = useConfigValue('gridEnabled');
   const vimModeEnabled = useConfigValue('vimModeEnabled');
   const vimHudEnabled = useConfigValue('vimHudEnabled');
@@ -592,29 +587,6 @@ const App: React.FC = () => {
   }, [isApiMode]);
   const [origin, setOrigin] = useState<Origin | null>(null);
   const [gitUser, setGitUser] = useState<string | undefined>();
-  const [isWSL, setIsWSL] = useState(false);
-  const updateInfo = useUpdateCheck();
-  const updateToastShown = useRef(false);
-  // True when the compiled CLI will install new releases itself (#1634); the
-  // "new version available" toast is then redundant and stays hidden. The
-  // payload lands long before the GitHub answer plus the toast delay, and a
-  // late flip still cancels the pending toast through the effect cleanup.
-  const [autoUpdateActive, setAutoUpdateActive] = useState(false);
-  useEffect(() => {
-    if (window.location.hash) return;
-    if (autoUpdateActive) return;
-    if (updateInfo?.updateAvailable && !updateInfo.dismissed && !updateToastShown.current) {
-      updateToastShown.current = true;
-      const t = setTimeout(() => {
-        toast('A new version of Plannotator is available', {
-          description: 'Open the Options menu to update.',
-          duration: 4000,
-          classNames: { toast: '!w-auto', description: '!text-foreground/70' },
-        });
-      }, 1500);
-      return () => clearTimeout(t);
-    }
-  }, [updateInfo?.updateAvailable, updateInfo?.dismissed, autoUpdateActive]);
   // One-time notice after a background auto-update (#1634); the compiled
   // CLI's server attaches it to the initial payload.
   const [autoUpdateNotice, setAutoUpdateNotice] = useState<AutoUpdateNotice | undefined>();
@@ -626,7 +598,7 @@ const App: React.FC = () => {
       toast(title, {
         description,
         duration: autoUpdateNotice.kind === 'failed' ? 10000 : 6000,
-        action: { label: 'Release notes', onClick: () => window.open(autoUpdateNotice.releaseUrl, '_blank', 'noopener,noreferrer') },
+        action: { label: 'Release notes', onClick: () => openExternalUrl(autoUpdateNotice.releaseUrl) },
         classNames: { toast: '!w-auto', description: '!text-foreground/70' },
       });
     }, 1500);
@@ -645,7 +617,7 @@ const App: React.FC = () => {
   // the Viewer DOM, and reconciling changed blocks against the old subtree throws.
   const [editGeneration, setEditGeneration] = useState(0);
   // True while the open editor buffer differs from what it mounted with.
-  const [editorDirty, setEditorDirty] = useState(false);
+  const [, setEditorDirty] = useState(false);
   // True while the open editor buffer differs from the as-submitted baseline.
   const [editorDiffersFromBaseline, setEditorDiffersFromBaseline] = useState(false);
   const [agentFeedbackRevision, setAgentFeedbackRevision] = useState(0);
@@ -2119,7 +2091,7 @@ const App: React.FC = () => {
       assetRoot: assetRouteUrl && activeDocBaseDir ? { dir: activeDocBaseDir, url: assetRouteUrl } : null,
     });
     if (intent.kind === 'external') {
-      window.open(intent.url, '_blank', 'noopener,noreferrer');
+      openExternalUrl(intent.url);
       return;
     }
     if (intent.kind === 'image') {
@@ -2517,7 +2489,6 @@ const App: React.FC = () => {
     isGeneratingShortUrl,
     shortUrlError,
     pendingSharedAnnotations,
-    sharedGlobalAttachments,
     clearPendingSharedAnnotations,
     generateShortUrl,
     importFromShareUrl,
@@ -2764,7 +2735,7 @@ const App: React.FC = () => {
   };
 
   // Fetch available agents for OpenCode (for validation on approve)
-  const { agents: availableAgents, validateAgent, getAgentWarning } = useAgents(origin);
+  const { agents: availableAgents, getAgentWarning } = useAgents(origin);
   // Approval model picker: Pi reports its catalog, every other host reports
   // none and the picker stays hidden. `null` means "no switch".
   const planModels = usePlanModels(origin === 'pi');
@@ -3636,11 +3607,6 @@ const App: React.FC = () => {
     };
   }, [sourceWatchSubscription.key]);
 
-  const handleTaterModeChange = useCallback((enabled: boolean) => {
-    setTaterMode(enabled);
-    storage.setItem('plannotator-tater-mode', String(enabled));
-  }, []);
-
   const handleEditorModeChange = (mode: EditorMode) => {
     setEditorMode(mode);
     saveEditorMode(mode);
@@ -3764,7 +3730,6 @@ const App: React.FC = () => {
         // toggle; OpenCode, Pi and dev runs send no autoUpdateSupported.
         setAutoUpdateSetting(data.autoUpdateSupported === true && typeof data.serverConfig?.autoUpdate === 'boolean' ? { env: data.serverConfig.autoUpdateEnv } : undefined);
         agentTool.adopt(data.serverConfig);
-        setAutoUpdateActive(data.autoUpdateActive === true);
         setAutoUpdateNotice(parseAutoUpdateNotice(data.autoUpdateNotice));
         if (data.mode === 'goal-setup' && data.goalSetup) {
           setGoalSetupBundle(data.goalSetup);
@@ -3898,9 +3863,6 @@ const App: React.FC = () => {
           }
           // Load saved permission mode preference
           setPermissionMode(getPermissionModeSettings().mode);
-        }
-        if (data.isWSL) {
-          setIsWSL(true);
         }
       })
       .catch(() => {
@@ -5232,7 +5194,7 @@ const App: React.FC = () => {
   };
 
 
-  const handleTocNavigate = (blockId: string) => {
+  const handleTocNavigate = (_blockId: string) => {
     // Navigation handled by TableOfContents component
     // This is just a placeholder for future custom logic
   };
@@ -5437,9 +5399,14 @@ const App: React.FC = () => {
     setIsPanelOpen(true);
   }, [exitWideMode, isCompactTouchLayout, openCompactPlanSurface, wideModeType]);
 
-  const handleAskAI = useCallback((question: string, context?: CommentAskAIContext): boolean => {
+  const handleAskAI = useCallback((question: string, context?: CommentAskAIContext, images?: AIAttachment[]): boolean => {
+    // The terminal path is text-only, so image paths are inlined for it; the AI
+    // path carries them as data and appendImagePaths adds them to the message.
+    const imageLines = images?.length
+      ? `\n\n${images.map((image) => `[image] ${image.path}`).join('\n')}`
+      : '';
     if (isAgentTerminalReady) {
-      if (sendToAgentTerminal(buildAgentAskPrompt(question, context))) {
+      if (sendToAgentTerminal(buildAgentAskPrompt(`${question}${imageLines}`, context))) {
         return true;
       }
       handleAgentTerminalReadyChange(false);
@@ -5456,6 +5423,7 @@ const App: React.FC = () => {
     openAIChat();
     askAI({
       prompt: question,
+      images,
       scope: context ? {
         kind: context.kind,
         label: context.label,
@@ -5479,8 +5447,8 @@ const App: React.FC = () => {
     sendToAgentTerminal,
   ]);
 
-  const handleAskGeneralAI = useCallback((question: string) => {
-    handleAskAI(question, { kind: 'general', label: aiDocumentMode ? 'Document' : 'Plan', sourcePath: aiDocumentPath });
+  const handleAskGeneralAI = useCallback((question: string, images?: AIAttachment[]) => {
+    handleAskAI(question, { kind: 'general', label: aiDocumentMode ? 'Document' : 'Plan', sourcePath: aiDocumentPath }, images);
   }, [aiDocumentMode, aiDocumentPath, handleAskAI]);
 
   // Bot callback config — read once from URL search params (?cb=&ct=)
@@ -6880,7 +6848,6 @@ const App: React.FC = () => {
           feedbackLabel={answersOnlyFeedback ? SEND_ANSWERS_LABEL : undefined}
           annotateDecision={annotateMode ? annotateDecision : undefined}
           callbackConfig={callbackConfig}
-          taterMode={taterMode}
           mobileSettingsOpen={mobileSettingsOpen}
           gitUser={gitUser}
           autoUpdateSetting={autoUpdateSetting}
@@ -6900,7 +6867,6 @@ const App: React.FC = () => {
           onAIChatToggle={handleAIChatToggle}
           onArchiveCopy={archive.copy}
           onArchiveDone={archive.done}
-          onTaterModeChange={handleTaterModeChange}
           onIdentityChange={handleIdentityChange}
           onUIPreferencesChange={setUiPrefs}
           onOpenSettings={handleOpenSettings}
@@ -6915,8 +6881,6 @@ const App: React.FC = () => {
           onSaveToBear={handleSaveToBear}
           onSaveToOctarine={handleSaveToOctarine}
           appVersion={typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'}
-          updateInfo={updateInfo}
-          isWSL={isWSL}
           agentInstructionsEnabled={isApiMode && !archive.archiveMode && !goalSetupMode}
           obsidianConfigured={notesSaveAvailable && isObsidianConfigured()}
           bearConfigured={notesSaveAvailable && getBearSettings().enabled}
@@ -7038,8 +7002,6 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <div data-print-region="content" className={`flex-1 flex ${usesDocumentScroll ? 'overflow-visible' : 'overflow-hidden'} relative z-0 ${isResizing ? 'select-none' : ''}`}>
-          {/* Tater sprites — inside content wrapper so z-0 stacking context applies */}
-          {taterMode && <TaterSpriteRunning />}
           {showAgentTerminalOnLeft && agentTerminalPanel}
           {/* Left Sidebar: collapsed tab flags (when sidebar is closed) */}
           {!isCompactTouchLayout && wideModeType === null && !sidebar.isOpen && !goalSetupMode && !isLeftAgentTerminalVisible && !(isHtmlSurface && htmlToolsHidden) && (
@@ -7101,7 +7063,6 @@ const App: React.FC = () => {
                   onInputMethodChange={handleInputMethodChange}
                   mode={editorMode}
                   onModeChange={handleEditorModeChange}
-                  taterMode={taterMode}
                   repoInfo={repoInfo}
                   planDiffStats={planDiff.diffStats}
                   isPlanDiffActive={isPlanDiffActive}
@@ -7137,7 +7098,6 @@ const App: React.FC = () => {
                       onInputMethodChange={handleInputMethodChange}
                       mode={editorMode}
                       onModeChange={handleEditorModeChange}
-                      taterMode={taterMode}
                       showHelpLink
                     />
                   )}
@@ -7192,7 +7152,7 @@ const App: React.FC = () => {
                     className="absolute -top-5 left-0 right-0 mx-auto w-full flex justify-end pointer-events-none"
                     style={annotateReaderMaxWidth === null ? undefined : { maxWidth: annotateReaderMaxWidth ?? 832 }}
                   >
-                    <div className={`pointer-events-auto flex items-center gap-1.5 text-[11px] tracking-wide ${taterMode ? 'mr-[60px]' : 'mr-[4px]'}`}>
+                    <div className={`pointer-events-auto flex items-center gap-1.5 text-[11px] tracking-wide mr-[4px]`}>
                       {canUseWideMode && (['wide', 'focus'] as const).map((type, i) => (
                         <React.Fragment key={type}>
                           {i > 0 && <span aria-hidden className="text-muted-foreground/30 select-none">|</span>}
@@ -7390,7 +7350,6 @@ const App: React.FC = () => {
                     vimHudEnabled={vimModeEnabled && vimHudEnabled}
                     vimHudKeyPanelEnabled={vimHudKeyPanelEnabled}
                     onVimHudKeyPanelChange={handleVimHudKeyPanelChange}
-                    taterMode={taterMode}
                     gridEnabled={gridEnabled}
                     globalAttachments={globalAttachments}
                     onAddGlobalAttachment={handleAddGlobalAttachment}
@@ -7550,7 +7509,6 @@ const App: React.FC = () => {
               : ''
           }
           annotationCount={allAnnotations.length + codeAnnotations.length}
-          taterSprite={taterMode ? <TaterSpritePullup /> : undefined}
           sharingEnabled={canShareCurrentSession}
           markdown={markdown}
           isApiMode={isApiMode && !documentReadOnly}

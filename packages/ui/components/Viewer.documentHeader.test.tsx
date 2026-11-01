@@ -125,7 +125,6 @@ function ControlledViewer({ sticky = true }: { readonly sticky?: boolean }) {
       selectedAnnotationId={null}
       mode={mode}
       inputMethod={inputMethod}
-      taterMode={false}
       stickyActions={sticky}
       disableCodePathValidation
       repoInfo={{ display: 'backnotprop/plannotator', branch: 'main' }}
@@ -219,7 +218,6 @@ describe.if(hasDom)('Viewer annotationHeader', () => {
         onSelectAnnotation={() => {}}
         selectedAnnotationId={null}
         mode="selection"
-        taterMode={false}
         stickyActions={false}
         disableCodePathValidation
       />,
@@ -244,7 +242,6 @@ describe.if(hasDom)('Viewer annotationHeader', () => {
         onSelectAnnotation={() => {}}
         selectedAnnotationId={null}
         mode="selection"
-        taterMode={false}
         stickyActions
         disableCodePathValidation
       />,
@@ -377,7 +374,6 @@ describe.if(hasDom)('Viewer annotationHeader', () => {
         onSelectAnnotation={() => {}}
         selectedAnnotationId={null}
         mode="selection"
-        taterMode={false}
         stickyActions
         disableCodePathValidation
       />,

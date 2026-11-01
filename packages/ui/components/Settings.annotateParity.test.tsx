@@ -45,7 +45,7 @@ async function mountSettings(
   root = createRoot(host);
   await act(async () => {
     root?.render(
-      <Settings taterMode={false} onTaterModeChange={() => {}} mode={mode} origin={origin} annotateParity={annotateParity} externalOpen />,
+      <Settings mode={mode} origin={origin} annotateParity={annotateParity} externalOpen />,
     );
   });
 }

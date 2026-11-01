@@ -147,7 +147,6 @@ const Harness: React.FC<{ initial: Annotation[] }> = ({ initial }) => {
       selectedAnnotationId={null}
       mode="redline"
       inputMethod="pinpoint"
-      taterMode={false}
       disableCodePathValidation
     />
   );

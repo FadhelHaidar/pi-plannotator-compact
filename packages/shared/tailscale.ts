@@ -1,17 +1,10 @@
 /**
  * Tailscale helpers for remote-friendly sessions.
  *
- * Two consumers:
- *   - urlHost "auto" (PLANNOTATOR_URL_HOST=auto): detect this machine's
- *     tailnet host so remote sessions advertise a reachable URL without the
- *     user hand-copying their MagicDNS name into config. Display-only, like
- *     every urlHost value — binding stays governed by PLANNOTATOR_REMOTE.
- *   - `--tailscale` (Bun CLI): parse/compose the `tailscale serve` commands
- *     that publish a loopback-bound session over the tailnet with HTTPS.
- *
- * Pure parsers live here so both runtimes (Bun server, Pi extension) share
- * them. The only process-spawning edge is `runTailscale`, which never invokes
- * a shell and is injectable for tests.
+ * One consumer: urlHost "auto" (PLANNOTATOR_URL_HOST=auto). Detect this
+ * machine's tailnet host so remote sessions advertise a reachable URL without
+ * the user hand-copying their MagicDNS name into config. Display-only, like
+ * every urlHost value — binding stays governed by PLANNOTATOR_REMOTE.
  */
 
 import { spawnSync } from "node:child_process";
@@ -19,8 +12,6 @@ import { isValidUrlHost } from "./config";
 
 /** Detection commands answer from local state; keep the wait short. */
 export const TAILSCALE_CLI_TIMEOUT_MS = 3_000;
-/** Serve config writes talk to the daemon; allow a little more. */
-export const TAILSCALE_SERVE_TIMEOUT_MS = 10_000;
 
 /** The urlHost sentinel that requests tailnet host detection. */
 export function isAutoUrlHost(host: string): boolean {
@@ -131,84 +122,6 @@ export function detectTailnetHost(run: TailscaleRunner = runTailscale): TailnetH
   return {
     error: "Tailscale did not report a MagicDNS name or a single 100.64.0.0/10 IPv4 address.",
   };
-}
-
-/** `tailscale serve --bg --https=<port> http://127.0.0.1:<port>` */
-export function buildServeArgs(port: number): string[] {
-  return ["serve", "--bg", `--https=${port}`, `http://127.0.0.1:${port}`];
-}
-
-/** `tailscale serve --https=<port> off` — the matching teardown. */
-export function buildServeOffArgs(port: number): string[] {
-  return ["serve", `--https=${port}`, "off"];
-}
-
-export type ServeStatusPortCheck = "free" | "conflict" | "malformed";
-
-/**
- * Inspect `tailscale serve status --json` for an existing route on the given
- * port. Both the top-level background config (`TCP`) and every foreground
- * session (`Foreground.<sessionId>.TCP`) count: Tailscale prefers foreground
- * handlers, so a foreground mapping would silently shadow a background one we
- * install and route our advertised URL to someone else's service.
- *
- * Fails CLOSED: output we cannot recognize returns "malformed" so the caller
- * errors clearly instead of assuming the port is free.
- */
-export function checkServeStatusPort(stdout: string, port: number): ServeStatusPortCheck {
-  const trimmed = stdout.trim();
-  if (trimmed === "") return "malformed";
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return "malformed";
-  }
-  // `null` is Tailscale's honest "no serve config"; `{}` likewise.
-  if (parsed === null) return "free";
-  if (typeof parsed !== "object" || Array.isArray(parsed)) return "malformed";
-
-  const key = String(port);
-  const checkTcp = (tcp: unknown): ServeStatusPortCheck => {
-    if (tcp === undefined || tcp === null) return "free";
-    if (typeof tcp !== "object" || Array.isArray(tcp)) return "malformed";
-    return Object.prototype.hasOwnProperty.call(tcp, key) ? "conflict" : "free";
-  };
-
-  const top = checkTcp((parsed as { TCP?: unknown }).TCP);
-  if (top !== "free") return top;
-
-  const foreground = (parsed as { Foreground?: unknown }).Foreground;
-  if (foreground === undefined || foreground === null) return "free";
-  if (typeof foreground !== "object" || Array.isArray(foreground)) return "malformed";
-  for (const session of Object.values(foreground)) {
-    if (session === null) continue;
-    if (typeof session !== "object" || Array.isArray(session)) return "malformed";
-    const result = checkTcp((session as { TCP?: unknown }).TCP);
-    if (result !== "free") return result;
-  }
-  return "free";
-}
-
-/**
- * First https URL in `tailscale serve --bg` output whose port matches the
- * port we asked to publish, sans trailing slash. Serve output is
- * version-dependent, so an https URL for a DIFFERENT port (some other
- * pre-existing mapping echoed in the config dump) must not be advertised.
- */
-export function extractServeHttpsUrl(output: string, expectedPort: number): string | undefined {
-  for (const match of output.matchAll(/https:\/\/[^\s|]+/g)) {
-    const candidate = match[0].replace(/\/+$/, "");
-    try {
-      const url = new URL(candidate);
-      if (url.protocol !== "https:" || !url.hostname) continue;
-      if (Number(url.port || "443") !== expectedPort) continue;
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
 }
 
 /**

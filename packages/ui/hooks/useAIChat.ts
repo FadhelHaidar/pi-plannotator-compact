@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AIContext } from '@plannotator/core';
-import type { AIQuestion, AIResponse } from '../types';
+import type { AIAttachment, AIQuestion, AIResponse } from '../types';
 import { generateId } from '../utils/generateId';
 import { SESSION_ASK_ERROR_CODES } from '../utils/aiProvider';
 
@@ -30,6 +30,9 @@ export interface AIChatThread {
 
 export interface AskAIParams {
   prompt: string;
+  /** Screenshots attached by the user: shown in the chat, sent to the agent as
+   *  `[image] <path>` lines so a text-only transport carries them. */
+  images?: AIAttachment[];
   filePath?: string;
   lineStart?: number;
   lineEnd?: number;
@@ -64,6 +67,13 @@ interface UseAIChatOptions {
   reasoningEffort?: string | null;
   buildPrompt?: (params: AskAIParams) => string;
   threadTitle?: string;
+}
+
+/** Image paths ride on the outgoing prompt only, so the chat shows the user's
+ *  own text and a text-only transport still carries the attachments. */
+export function appendImagePaths(prompt: string, images?: AIAttachment[]): string {
+  if (!images?.length) return prompt;
+  return `${prompt}\n\n${images.map((image) => `[image] ${image.path}`).join('\n')}`;
 }
 
 export function buildDefaultPrompt(params: AskAIParams): string {
@@ -320,6 +330,7 @@ export function useAIChat({
     const question: AIQuestion = {
       id: questionId,
       prompt: params.prompt,
+      images: params.images,
       scope: params.scope,
       filePath: params.filePath,
       lineStart: params.lineStart,
@@ -351,7 +362,7 @@ export function useAIChat({
         throw createAbortError('AI question was superseded');
       }
 
-      const fullPrompt = buildPrompt(params);
+      const fullPrompt = appendImagePaths(buildPrompt(params), params.images);
       const res = await aiTransport.query({
         sessionId: sid,
         prompt: fullPrompt,

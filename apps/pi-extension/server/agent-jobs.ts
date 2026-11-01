@@ -25,6 +25,7 @@ import {
 	AGENT_HEARTBEAT_INTERVAL_MS,
 } from "../generated/agent-jobs.ts";
 import { resolveGuideLaunchInstructions } from "../generated/guide-instructions-store.ts";
+import { killWindowsProcessTree, planAgentJobSpawn } from "../generated/ai/providers/command-path.ts";
 import { gitColorFreeEnvironment } from "../generated/review-core.ts";
 import type { GuideLaunchReview } from "../generated/guide-format.ts";
 import {
@@ -57,16 +58,26 @@ const SERVER_BUILT_PROVIDERS: ReadonlySet<string> = new Set([
 // which() helper for Node.js
 // ---------------------------------------------------------------------------
 
-export function whichCmd(cmd: string): boolean {
+/** The marker engine a job runs: its provider's, or the one a guide job carries. */
+function jobMarkerEngine(provider: string, engine: string | undefined): MarkerEngine | undefined {
+	return MARKER_ENGINES[provider as MarkerEngineId] ?? (engine ? MARKER_ENGINES[engine as MarkerEngineId] : undefined);
+}
+
+/** Where `cmd` is on the live PATH (the first match), or null. */
+export function whichPath(cmd: string): string | null {
 	try {
 		const bin = process.platform === "win32" ? "where" : "which";
 		// Pass the live env explicitly: under Bun, execFileSync without `env` looks
 		// the binary up on the STARTUP PATH, not the current process.env.PATH.
-		execFileSync(bin, [cmd], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: process.env });
-		return true;
+		const out = execFileSync(bin, [cmd], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: process.env });
+		return out.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? null;
 	} catch {
-		return false;
+		return null;
 	}
+}
+
+export function whichCmd(cmd: string): boolean {
+	return whichPath(cmd) !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,11 +155,28 @@ export interface AgentJobHandlerOptions {
  */
 async function discoverMarkerModels(engine: MarkerEngine): Promise<MarkerModel[]> {
 	try {
-		const { stdout } = await execFileAsync(engine.binary, engine.modelsArgv, {
-			timeout: 5000,
+		// A Windows .cmd shim starts through cmd.exe, as a job does (#2372).
+		const launch = planAgentJobSpawn([engine.binary, ...engine.modelsArgv], { which: whichPath });
+		if (launch.unsafeScript) return [];
+		const pending = execFileAsync(launch.command[0]!, launch.command.slice(1), {
 			encoding: "utf8",
+			windowsVerbatimArguments: launch.verbatim,
 		});
-		return engine.parseModels(stdout);
+		// Out of time: through cmd.exe the whole tree ends, not cmd.exe alone.
+		const timer = setTimeout(() => {
+			const child = pending.child;
+			try {
+				if (!launch.verbatim || !killWindowsProcessTree(child.pid)) child.kill();
+			} catch {
+				// Already gone.
+			}
+		}, 5000);
+		try {
+			const { stdout } = await pending;
+			return engine.parseModels(stdout);
+		} finally {
+			clearTimeout(timer);
+		}
 	} catch {
 		return [];
 	}
@@ -158,7 +186,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 	const { mode, getServerUrl, getCwd } = options;
 
 	// --- State ---
-	const jobs = new Map<string, { info: AgentJobInfo; proc: ChildProcess | null }>();
+	const jobs = new Map<string, { info: AgentJobInfo; proc: ChildProcess | null; tree?: boolean }>();
 	const jobOutputPaths = new Map<string, string>();
 	const jobChangedFilesSnapshots = new Map<string, string[]>();
 	const jobLaunchReviews = new Map<string, GuideLaunchReview>();
@@ -256,10 +284,21 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 		try {
 			const spawnCwd = spawnOptions?.cwd ?? getCwd();
 			const captureStdout = spawnOptions?.captureStdout ?? false;
-			const hasStdinPrompt = !!spawnOptions?.stdinPrompt;
+			// On Windows a CLI installed as a .cmd shim (Pi's pi.cmd) starts through
+			// cmd.exe; Node cannot spawn one by its bare name (#2372). Elsewhere this
+			// is the command as built.
+			const launch = planAgentJobSpawn(command, {
+				which: whichPath,
+				stdinPrompt: spawnOptions?.stdinPrompt,
+				promptOnStdin: jobMarkerEngine(provider, spawnOptions?.engine)?.promptOnStdin,
+			});
+			if (launch.unsafeScript) throw new Error(launch.unsafeScript);
+			const stdinPrompt = launch.stdinPrompt;
+			const hasStdinPrompt = !!stdinPrompt;
 
-			proc = spawn(command[0], command.slice(1), {
+			proc = spawn(launch.command[0]!, launch.command.slice(1), {
 				cwd: spawnCwd,
+				windowsVerbatimArguments: launch.verbatim,
 				stdio: [
 					hasStdinPrompt ? "pipe" : "ignore",
 					captureStdout ? "pipe" : "ignore",
@@ -284,14 +323,17 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 
 			// Write prompt to stdin and close (for providers that read prompt from stdin)
 			if (hasStdinPrompt && proc.stdin) {
-				proc.stdin.write(spawnOptions!.stdinPrompt!);
+				// A child that exits before reading its prompt (EPIPE) must not crash
+				// the person's Pi session; the job's exit reports it.
+				proc.stdin.on("error", () => {});
+				proc.stdin.write(stdinPrompt!);
 				proc.stdin.end();
 			}
 
 			info.status = "running";
 			info.cwd = spawnCwd;
 			if (spawnOptions?.prompt) info.prompt = spawnOptions.prompt;
-			jobs.set(id, { info, proc });
+			jobs.set(id, { info, proc, tree: launch.verbatim });
 			if (outputPath) jobOutputPaths.set(id, outputPath);
 			if (spawnOptions?.cwd) jobOutputPaths.set(`${id}:cwd`, spawnOptions.cwd);
 			if (spawnOptions?.changedFilesSnapshot) jobChangedFilesSnapshots.set(id, spawnOptions.changedFilesSnapshot);
@@ -451,7 +493,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 
 		if (entry.proc) {
 			try {
-				entry.proc.kill();
+				// Through cmd.exe `kill()` ends cmd.exe alone and leaves the CLI running.
+				if (!entry.tree || !killWindowsProcessTree(entry.proc.pid)) entry.proc.kill();
 			} catch {
 				// Process may have already exited
 			}

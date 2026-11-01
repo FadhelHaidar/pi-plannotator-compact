@@ -1028,9 +1028,6 @@ packages/ui/components/StickyHeaderLane.test.tsx
 packages/ui/components/StickyHeaderLane.tsx
 packages/ui/components/TableOfContents.linkedDoc.test.tsx
 packages/ui/components/TableOfContents.tsx
-packages/ui/components/TaterSpritePullup.tsx
-packages/ui/components/TaterSpriteRunning.tsx
-packages/ui/components/TaterSpriteSitting.tsx
 packages/ui/components/TerminalToolsAnnouncementDialog.test.tsx
 packages/ui/components/TerminalToolsAnnouncementDialog.tsx
 packages/ui/components/TextShimmer.tsx
@@ -1306,9 +1303,6 @@ packages/ui/shortcuts/plan-review/sidebar.shortcuts.ts
 packages/ui/shortcuts/plan-review/viewer.shortcuts.ts
 packages/ui/shortcuts/plan-review/vimSelection.shortcuts.ts
 packages/ui/shortcuts/runtime.ts
-packages/ui/sprite_package_additional/sprite.png
-packages/ui/sprite_package_new/sprite.png
-packages/ui/sprite_package_pulluphang/sprite.png
 packages/ui/styles-entry.css
 packages/ui/test-consumer/annotation-toolstrip.tsx
 packages/ui/test-consumer/diff-file-tree.tsx

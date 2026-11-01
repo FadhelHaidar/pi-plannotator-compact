@@ -4,18 +4,13 @@
  * Run: bun test packages/shared/tailscale.test.ts
  *
  * No test here ever spawns the real `tailscale` CLI or touches tailnet state:
- * detection and serve-command construction are exercised through fixtures and
- * an injected runner.
+ * detection is exercised through fixtures and an injected runner.
  */
 
 import { describe, expect, test } from "bun:test";
 import {
-  buildServeArgs,
-  buildServeOffArgs,
-  checkServeStatusPort,
   describeTailscaleFailure,
   detectTailnetHost,
-  extractServeHttpsUrl,
   isAutoUrlHost,
   parseTailscaleIpv4,
   parseTailscaleIpv4Output,
@@ -118,95 +113,5 @@ describe("describeTailscaleFailure", () => {
     expect(describeTailscaleFailure({ status: 1, stdout: "", stderr: "" })).toContain(
       "tailscale up",
     );
-  });
-});
-
-describe("serve command construction", () => {
-  // These argv shapes are the contract with the `tailscale` CLI; a drift here
-  // silently breaks publishing or, worse, cleanup.
-  test("serve args proxy the exact loopback port and its teardown matches", () => {
-    expect(buildServeArgs(19432)).toEqual([
-      "serve",
-      "--bg",
-      "--https=19432",
-      "http://127.0.0.1:19432",
-    ]);
-    expect(buildServeOffArgs(19432)).toEqual(["serve", "--https=19432", "off"]);
-  });
-});
-
-describe("checkServeStatusPort", () => {
-  test("detects an existing background TCP mapping for the port", () => {
-    const json = JSON.stringify({
-      TCP: { "8443": { HTTPS: true } },
-      Web: { "host.tail1234.ts.net:8443": { Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } } } },
-    });
-    expect(checkServeStatusPort(json, 8443)).toBe("conflict");
-    expect(checkServeStatusPort(json, 19432)).toBe("free");
-  });
-
-  test("detects foreground session mappings, which Tailscale prefers over background", () => {
-    const json = JSON.stringify({
-      Foreground: {
-        "1234567890": {
-          TCP: { "8443": { HTTPS: true } },
-          Web: { "host.tail1234.ts.net:8443": { Handlers: { "/": { Proxy: "http://127.0.0.1:9000" } } } },
-        },
-      },
-    });
-    expect(checkServeStatusPort(json, 8443)).toBe("conflict");
-    expect(checkServeStatusPort(json, 19432)).toBe("free");
-  });
-
-  test("treats {} and null as honestly-empty config", () => {
-    expect(checkServeStatusPort("{}", 19432)).toBe("free");
-    expect(checkServeStatusPort("null", 19432)).toBe("free");
-    expect(checkServeStatusPort(JSON.stringify({ TCP: null }), 19432)).toBe("free");
-  });
-
-  test("fails CLOSED on unrecognized or malformed output", () => {
-    expect(checkServeStatusPort("", 19432)).toBe("malformed");
-    expect(checkServeStatusPort("No serve config", 19432)).toBe("malformed");
-    expect(checkServeStatusPort("[1,2]", 19432)).toBe("malformed");
-    expect(checkServeStatusPort(JSON.stringify({ TCP: "weird" }), 19432)).toBe("malformed");
-    expect(checkServeStatusPort(JSON.stringify({ Foreground: { s1: { TCP: 42 } } }), 19432)).toBe(
-      "malformed",
-    );
-  });
-});
-
-describe("extractServeHttpsUrl", () => {
-  test("pulls the https URL for the requested port out of realistic serve --bg output", () => {
-    const output = [
-      "Available within your tailnet:",
-      "",
-      "https://my-machine.tail1234.ts.net:19432/",
-      "|-- proxy http://127.0.0.1:19432",
-      "",
-      "Serve started and running in the background.",
-    ].join("\n");
-    expect(extractServeHttpsUrl(output, 19432)).toBe("https://my-machine.tail1234.ts.net:19432");
-  });
-
-  test("skips https URLs for other ports (echoed pre-existing mappings)", () => {
-    const output = [
-      "https://my-machine.tail1234.ts.net:8443/",
-      "|-- proxy http://127.0.0.1:3000",
-      "https://my-machine.tail1234.ts.net:19432/",
-      "|-- proxy http://127.0.0.1:19432",
-    ].join("\n");
-    expect(extractServeHttpsUrl(output, 19432)).toBe("https://my-machine.tail1234.ts.net:19432");
-    expect(extractServeHttpsUrl(output, 4321)).toBeUndefined();
-  });
-
-  test("port 443 URLs carry no explicit port", () => {
-    expect(extractServeHttpsUrl("https://my-machine.tail1234.ts.net/", 443)).toBe(
-      "https://my-machine.tail1234.ts.net",
-    );
-  });
-
-  test("returns undefined when no valid https URL is present", () => {
-    expect(extractServeHttpsUrl("Serve started.", 19432)).toBeUndefined();
-    expect(extractServeHttpsUrl("http://127.0.0.1:19432", 19432)).toBeUndefined();
   });
 });

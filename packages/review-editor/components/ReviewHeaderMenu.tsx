@@ -9,11 +9,9 @@ import { useTheme } from '@plannotator/ui/components/ThemeProvider';
 import { THEME_MODES } from '@plannotator/ui/components/themeModes';
 import { MenuVersionSection } from '@plannotator/ui/components/MenuVersionSection';
 import { ReviewAgentsIcon } from '@plannotator/ui/components/ReviewAgentsIcon';
-import { TextShimmer } from '@plannotator/ui/components/TextShimmer';
 import { SparklesIcon } from '@plannotator/ui/components/SparklesIcon';
 import { PRPlatformIcon } from '@plannotator/ui/components/PRPlatformIcon';
 import { modKey } from '@plannotator/ui/utils/platform';
-import type { UpdateInfo } from '@plannotator/ui/hooks/useUpdateCheck';
 import type { Origin } from '@plannotator/shared/agents';
 
 export interface CompactReviewDestination {
@@ -48,7 +46,6 @@ interface ReviewHeaderMenuProps {
   compactTouchLayout?: boolean;
   agentInstructionsEnabled: boolean;
   appVersion: string;
-  updateInfo?: UpdateInfo | null;
   origin?: Origin | null;
   isWSL?: boolean;
 }
@@ -70,13 +67,10 @@ export const ReviewHeaderMenu: React.FC<ReviewHeaderMenuProps> = ({
   compactTouchLayout = false,
   agentInstructionsEnabled,
   appVersion,
-  updateInfo,
   origin,
   isWSL = false,
 }) => {
   const { theme, setTheme } = useTheme();
-
-  const showUpdateDot = !!updateInfo?.updateAvailable && !updateInfo.dismissed;
 
   return (
     <ActionMenu
@@ -90,7 +84,6 @@ export const ReviewHeaderMenu: React.FC<ReviewHeaderMenuProps> = ({
           data-pn-touch-target
           data-pn-touch-target-icon
           onClick={() => {
-            if (!isOpen && showUpdateDot) updateInfo?.dismiss();
             toggleMenu();
           }}
           className={`relative flex h-7 items-center gap-1.5 px-1.5 lg:px-2.5 rounded-md text-xs font-medium transition-colors ${
@@ -103,16 +96,7 @@ export const ReviewHeaderMenu: React.FC<ReviewHeaderMenuProps> = ({
           aria-expanded={isOpen}
         >
           {isOpen ? <CloseIcon /> : <MenuIcon />}
-          {showUpdateDot ? (
-            <TextShimmer className="hidden lg:inline text-xs font-medium" duration={2.5} spread={1.5}>
-              Options
-            </TextShimmer>
-          ) : (
-            <span className="hidden lg:inline">Options</span>
-          )}
-          {showUpdateDot && (
-            <span className="absolute top-0.5 right-0.5 lg:-top-0.5 lg:-right-0.5 w-2 h-2 rounded-full bg-primary ring-2 ring-background" />
-          )}
+          <span className="hidden lg:inline">Options</span>
         </button>
       )}
     >
@@ -298,9 +282,6 @@ export const ReviewHeaderMenu: React.FC<ReviewHeaderMenuProps> = ({
 
           <MenuVersionSection
             appVersion={appVersion}
-            updateInfo={updateInfo}
-            origin={origin}
-            isWSL={isWSL}
             closeMenu={closeMenu}
           />
         </>
