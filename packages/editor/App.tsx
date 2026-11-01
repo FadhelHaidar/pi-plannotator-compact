@@ -170,6 +170,7 @@ import {
 import type { GoalSetupBundle } from '@plannotator/shared/goal-setup';
 import type { AIContext } from '@plannotator/ai';
 import type { CommentAskAIContext } from '@plannotator/ui/components/CommentPopover';
+import type { AIAttachment } from '@plannotator/ui/types';
 import {
   hasSourceSaveConflictSnapshot,
   isSourceSaveFilePath,
@@ -5437,9 +5438,14 @@ const App: React.FC = () => {
     setIsPanelOpen(true);
   }, [exitWideMode, isCompactTouchLayout, openCompactPlanSurface, wideModeType]);
 
-  const handleAskAI = useCallback((question: string, context?: CommentAskAIContext): boolean => {
+  const handleAskAI = useCallback((question: string, context?: CommentAskAIContext, images?: AIAttachment[]): boolean => {
+    // The terminal path is text-only, so image paths are inlined for it; the AI
+    // path carries them as data and appendImagePaths adds them to the message.
+    const imageLines = images?.length
+      ? `\n\n${images.map((image) => `[image] ${image.path}`).join('\n')}`
+      : '';
     if (isAgentTerminalReady) {
-      if (sendToAgentTerminal(buildAgentAskPrompt(question, context))) {
+      if (sendToAgentTerminal(buildAgentAskPrompt(`${question}${imageLines}`, context))) {
         return true;
       }
       handleAgentTerminalReadyChange(false);
@@ -5456,6 +5462,7 @@ const App: React.FC = () => {
     openAIChat();
     askAI({
       prompt: question,
+      images,
       scope: context ? {
         kind: context.kind,
         label: context.label,
@@ -5479,8 +5486,8 @@ const App: React.FC = () => {
     sendToAgentTerminal,
   ]);
 
-  const handleAskGeneralAI = useCallback((question: string) => {
-    handleAskAI(question, { kind: 'general', label: aiDocumentMode ? 'Document' : 'Plan', sourcePath: aiDocumentPath });
+  const handleAskGeneralAI = useCallback((question: string, images?: AIAttachment[]) => {
+    handleAskAI(question, { kind: 'general', label: aiDocumentMode ? 'Document' : 'Plan', sourcePath: aiDocumentPath }, images);
   }, [aiDocumentMode, aiDocumentPath, handleAskAI]);
 
   // Bot callback config — read once from URL search params (?cb=&ct=)

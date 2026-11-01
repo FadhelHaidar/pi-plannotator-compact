@@ -25,6 +25,7 @@ async function render(props: {
   current?: PlanModelOption | null;
   value?: PlanModelOption | null;
   onChange?: (model: PlanModelOption | null) => void;
+  disabled?: boolean;
 }): Promise<{ select: HTMLSelectElement | null; picked: Array<PlanModelOption | null> }> {
   const picked: Array<PlanModelOption | null> = [];
   host = document.createElement('div');
@@ -36,6 +37,7 @@ async function render(props: {
         models={props.models ?? MODELS}
         current={props.current ?? MODELS[0]!}
         value={props.value ?? null}
+        disabled={props.disabled}
         onChange={props.onChange ?? (model => picked.push(model))}
       />,
     );
@@ -78,6 +80,27 @@ describe.skipIf(!hasDom)('PlanModelPicker', () => {
       select!.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(picked).toEqual([MODELS[1]!, null]);
+  });
+
+  test('uses neutral theme styling while retaining the native labeled focusable select', async () => {
+    const { select } = await render({ value: MODELS[1]! });
+    expect(select!.closest('label')!.textContent).toContain('Run with');
+    expect(select!.disabled).toBe(false);
+    select!.focus();
+    expect(document.activeElement).toBe(select);
+    expect(select!.selectedOptions[0]!.textContent).toBe('Gemini 2.5 Flash');
+    expect(select!.className).toContain('focus:border-foreground');
+    expect(select!.className).toContain('focus-visible:[outline-color:var(--foreground)]');
+    expect(select!.className).toContain('[&_option:checked]:bg-muted');
+    expect(select!.className).toContain('[&_option:checked]:text-foreground');
+    expect(select!.className).not.toMatch(/primary|accent/);
+  });
+
+  test('can be disabled during submission without losing the selected model', async () => {
+    const { select } = await render({ value: MODELS[1]!, disabled: true });
+    expect(select!.disabled).toBe(true);
+    expect(select!.value).toBe('google/gemini-2.5-flash');
+    expect(select!.className).toContain('disabled:opacity-50');
   });
 
   test('a value already picked is reflected on render', async () => {

@@ -36,3 +36,16 @@ describe("parseTourMarkerOutput", () => {
     expect(parseTourMarkerOutput(stream({ ...output, qa_checklist: [{ question: "Q?", stop_indices: [4] }] }), MARKER_ENGINES.pi, nonce)).toBeNull();
   });
 });
+
+describe("pi promptOnStdin", () => {
+  // #2372: a Windows .cmd shim runs through cmd.exe, which cannot carry the
+  // prompt's line breaks and quotes, so Pi's prompt moves to stdin.
+  test("a -p <prompt> tail becomes stdin, and any other argv is left alone", () => {
+    const prompt = 'Organize this diff.\n\n+const s = "100% & | <done>";';
+    const argv = MARKER_ENGINES.pi.buildArgv(prompt, "openai/gpt-5.1", "/repo");
+    expect(argv.slice(-2)).toEqual(["-p", prompt]);
+    expect(MARKER_ENGINES.pi.promptOnStdin!(argv)).toEqual({ command: argv.slice(0, -1), stdin: prompt });
+    expect(MARKER_ENGINES.pi.promptOnStdin!(["pi", "--list-models"])).toBeNull();
+    expect(MARKER_ENGINES.pi.promptOnStdin!(["pi"])).toBeNull();
+  });
+});

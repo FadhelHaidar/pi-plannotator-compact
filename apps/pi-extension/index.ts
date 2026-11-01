@@ -129,6 +129,15 @@ function loadPlannotatorPrompts(): Promise<PlannotatorPromptsModule> {
 	return promptsModulePromise;
 }
 
+/**
+ * Warm the prompts module as soon as a review opens, so the decision path does
+ * not import it at the moment it has to answer. A failed preload is dropped:
+ * the decision tries again, as before.
+ */
+function preloadDecisionPrompts(): void {
+	void loadPlannotatorPrompts().catch(() => {});
+}
+
 async function loadAnnotateCommandModules() {
 	const [annotateArgs, annotateTarget, annotateBundle, atReference, resolveFile, referenceCommon] = await Promise.all([
 		import("./generated/annotate-args.ts"),
@@ -997,6 +1006,7 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 		deliver: (result: T, review: PiOpenReview) => Promise<void>,
 	): PiOpenReview {
 		const review = openReviews.add({ kind, ...names, url: session.url, owner: ownerOf(ctx), hostControl: session.hostControl });
+		preloadDecisionPrompts();
 		void session
 			.waitForDecision()
 			.then(async (result) => {
@@ -2016,6 +2026,7 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 			// A previous review that is somehow still tracked loses to the new one.
 			if (pendingPlanReview && pendingPlanReview !== review) stopPendingPlanReview();
 			pendingPlanReview = review;
+			preloadDecisionPrompts();
 			// The history version the server saved this plan as: pushing the SAME
 			// text is a no-op that reports it (updatePlan's unchanged branch).
 			let planVersion: number | undefined;

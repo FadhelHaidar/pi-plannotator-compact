@@ -1942,3 +1942,33 @@ describe("pi plan server file browser", () => {
     }
   });
 });
+
+describe("pi code-nav file guard", () => {
+  test("serves a repo file but refuses absolute, traversing, missing, directory and oversized paths", async () => {
+    const repo = makeTempDir("plannotator-pi-nav-");
+    writeTempFile(repo, "src/app.ts", "export const ok = 1;\n");
+    writeFileSync(join(repo, "big.txt"), "x".repeat(5 * 1024 * 1024 + 1), "utf-8");
+    process.env.PLANNOTATOR_PORT = String(await reservePort());
+    const server = await startReviewServer({
+      rawPatch: "",
+      origin: "pi",
+      agentCwd: repo,
+      htmlContent: "<!doctype html><html><body>review</body></html>",
+    });
+    const read = (path: string) =>
+      fetch(`${server.url}/api/code-nav/file?path=${encodeURIComponent(path)}`);
+    try {
+      await expect(read("src/app.ts").then((response) => response.json())).resolves.toEqual({
+        content: "export const ok = 1;\n",
+      });
+      expect((await read("/etc/hosts")).status).toBe(400);
+      expect((await read("../escape.txt")).status).toBe(400);
+      expect((await read("")).status).toBe(400);
+      expect((await read("nope.txt")).status).toBe(404);
+      expect((await read("src")).status).toBe(400);
+      expect((await read("big.txt")).status).toBe(413);
+    } finally {
+      server.stop();
+    }
+  });
+});

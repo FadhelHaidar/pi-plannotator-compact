@@ -1,10 +1,10 @@
 import { isSameOriginOrNoOrigin } from "../generated/request-origin.ts";
 import { spawn } from "node:child_process";
 import { likelyAppHtmlEncoding, prewarmAppHtml } from "../generated/app-html.ts";
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
-import { basename } from "node:path";
+import { basename, resolve as resolvePath } from "node:path";
 
 import { SingleFlight } from "../generated/single-flight.ts";
 import { contentHash } from "../generated/draft.ts";
@@ -75,6 +75,12 @@ import {
 	handleReviewImageRequest,
 	readPRImageSide,
 } from "../generated/review-image.ts";
+import {
+	readFileCapped,
+	readRepoFile,
+	REPO_FILE_ERROR_STATUS,
+	repoFileErrorBody,
+} from "../generated/repo-file.ts";
 import {
 	getGitButlerContextRevision,
 	getGitButlerPatchFingerprint,
@@ -251,15 +257,12 @@ const piCodeNavRuntime: CodeNavRuntime = {
 	},
 
 	async readFile(path, options) {
-		try {
-			const full = options?.cwd ? `${options.cwd}/${path}` : path;
-			// Check the size before pulling bytes: rg would not have searched a
-			// file this large either.
-			if (statSync(full).size > CODE_NAV_MAX_FILE_BYTES) return null;
-			return readFileSync(full, "utf-8");
-		} catch {
-			return null;
-		}
+		// Capped at what rg searches, non-blocking (generated/repo-file.ts): a FIFO
+		// swapped in after the caller's stat cannot block Pi's event loop.
+		const read = await readFileCapped(options?.cwd ? resolvePath(options.cwd, path) : path, {
+			maxBytes: CODE_NAV_MAX_FILE_BYTES,
+		});
+		return read.ok ? read.content : null;
 	},
 };
 
@@ -3389,21 +3392,14 @@ export async function startReviewServer(options: {
 				return;
 			}
 			const filePath = url.searchParams.get("path");
-			if (!filePath) {
-				json(res, { error: "Missing path" }, 400);
+			// Links followed like an editor; 5 MB cap and no FIFO hang
+			// (generated/repo-file.ts).
+			const read = await readRepoFile(resolveAgentCwd(), filePath);
+			if (!read.ok) {
+				json(res, repoFileErrorBody(read), REPO_FILE_ERROR_STATUS[read.reason]);
 				return;
 			}
-			try { validateFilePath(filePath); } catch {
-				json(res, { error: "Invalid path" }, 400);
-				return;
-			}
-			try {
-				const navCwd = resolveAgentCwd();
-				const content = readFileSync(`${navCwd}/${filePath}`, "utf-8");
-				json(res, { content });
-			} catch {
-				json(res, { error: "File not found" }, 404);
-			}
+			json(res, { content: read.content });
 		} else if (url.pathname === "/api/config" && req.method === "POST") {
 			if (!isSameOriginOrNoOrigin(req.headers.origin ?? null, req.headers.host ?? "", req.headers["sec-fetch-site"])) {
 				json(res, { error: "Cross-origin config writes are not allowed" }, 403);

@@ -110,6 +110,8 @@ export const ImageThumbnail: React.FC<ImageThumbnailProps> = ({
       {showRemove && onRemove && (
         <button
           type="button"
+          aria-label="Remove attachment"
+          title="Remove attachment"
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
