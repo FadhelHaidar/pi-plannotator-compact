@@ -54,7 +54,6 @@ class ToolbarErrorBoundary extends React.Component<
 }
 
 import { CommentPopover, type CommentAskAIHandler } from './CommentPopover';
-import { TaterSpriteSitting } from './TaterSpriteSitting';
 import { AttachmentsButton } from './AttachmentsButton';
 import { documentActionButtonClass } from './documentActionButton';
 import { MessagesIcon } from './icons/MessagesIcon';
@@ -128,7 +127,6 @@ export interface ViewerProps {
   selectedAnnotationId: string | null;
   mode: EditorMode;
   inputMethod?: InputMethod;
-  taterMode: boolean;
   globalAttachments?: ImageAttachment[];
   onAddGlobalAttachment?: (image: ImageAttachment) => void;
   onRemoveGlobalAttachment?: (path: string) => void;
@@ -427,7 +425,6 @@ interface ViewerDocumentHeaderProps {
   readonly config: ViewerAnnotationHeaderConfig;
   readonly inputMethod: InputMethod;
   readonly mode: EditorMode;
-  readonly taterMode: boolean;
   readonly sticky: boolean;
   readonly stuck: boolean;
   readonly sentinelRef: React.RefObject<HTMLDivElement | null>;
@@ -440,7 +437,6 @@ const ViewerDocumentHeader: React.FC<ViewerDocumentHeaderProps> = ({
   config,
   inputMethod,
   mode,
-  taterMode,
   sticky,
   stuck,
   sentinelRef,
@@ -512,7 +508,6 @@ const ViewerDocumentHeader: React.FC<ViewerDocumentHeaderProps> = ({
                 onInputMethodChange={config.onInputMethodChange}
                 mode={mode}
                 onModeChange={config.onModeChange}
-                taterMode={taterMode}
                 hideQuickLabel={config.hideQuickLabel}
                 compact
                 iconOnly={iconOnly}
@@ -551,7 +546,6 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
   selectedAnnotationId,
   mode,
   inputMethod = 'drag',
-  taterMode,
   selectionActions,
   selectionActionsIcon,
   quickLabels,
@@ -1318,7 +1312,6 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
     <CodePathValidationContext.Provider value={codePathValidation}>
     <DiagramAnchorClaimsContext.Provider value={diagramClaims}>
     <div className="relative z-50 w-full" style={maxWidth === null ? undefined : { maxWidth: maxWidth ?? 832 }}>
-      {taterMode && <TaterSpriteSitting />}
       <article
         ref={containerRef}
         data-print-region="article"
@@ -1363,7 +1356,6 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
             config={viewerAnnotationHeader}
             inputMethod={inputMethod}
             mode={mode}
-            taterMode={taterMode}
             sticky={stickyActions}
             stuck={isStuck}
             sentinelRef={stickySentinelRef}

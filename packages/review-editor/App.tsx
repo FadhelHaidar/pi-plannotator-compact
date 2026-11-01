@@ -5790,8 +5790,6 @@ const ReviewApp: React.FC = () => {
 
         <div className="hidden" aria-hidden="true">
           <Settings
-            taterMode={false}
-            onTaterModeChange={() => {}}
             onIdentityChange={handleIdentityChange}
             origin={origin}
             mode="review"

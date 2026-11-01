@@ -52,7 +52,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
             selectedAnnotationId={null}
             mode="selection"
             inputMethod="drag"
-            taterMode={false}
             stickyActions={false}
             disableCodePathValidation
             vimModeEnabled
@@ -100,7 +99,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="selection"
           inputMethod="drag"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled={false}
@@ -139,7 +137,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="comment"
           inputMethod="drag"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled
@@ -189,7 +186,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="selection"
           inputMethod="drag"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled
@@ -236,7 +232,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="selection"
           inputMethod="pinpoint"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled
@@ -297,7 +292,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="selection"
           inputMethod="pinpoint"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled
@@ -403,7 +397,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="selection"
           inputMethod="pinpoint"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled
@@ -453,7 +446,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="selection"
           inputMethod="drag"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled
@@ -515,7 +507,6 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
           selectedAnnotationId={null}
           mode="selection"
           inputMethod="drag"
-          taterMode={false}
           stickyActions={false}
           disableCodePathValidation
           vimModeEnabled

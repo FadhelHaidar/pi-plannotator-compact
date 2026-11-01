@@ -22,8 +22,6 @@ async function mountSettings(mode: 'plan' | 'annotate' | 'review'): Promise<void
   await act(async () => {
     root?.render(
       <Settings
-        taterMode={false}
-        onTaterModeChange={() => {}}
         mode={mode}
         externalOpen
       />,

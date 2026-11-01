@@ -53,7 +53,6 @@ export interface StickyHeaderLaneProps {
   onInputMethodChange: (method: InputMethod) => void;
   mode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
-  taterMode?: boolean;
   /** Omit the Quick Label tool in the compact toolstrip (mirrors AnnotationToolstripProps.hideQuickLabel). */
   hideQuickLabel?: boolean;
 
@@ -101,7 +100,6 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
   onInputMethodChange,
   mode,
   onModeChange,
-  taterMode,
   hideQuickLabel,
   visibility = 'stuck',
   sticky = true,
@@ -266,7 +264,6 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
               onInputMethodChange={onInputMethodChange}
               mode={mode}
               onModeChange={onModeChange}
-              taterMode={taterMode}
               hideQuickLabel={hideQuickLabel}
               compact
               iconOnly={isNarrow || isToolstripIconOnly}

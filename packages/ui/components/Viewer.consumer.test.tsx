@@ -81,7 +81,6 @@ const viewerProps = {
   onSelectAnnotation: () => {},
   selectedAnnotationId: null,
   mode: 'comment' as const,
-  taterMode: false,
   // Host posture: no /api/doc/exists endpoint.
   disableCodePathValidation: true,
 };

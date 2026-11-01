@@ -84,7 +84,6 @@ async function mount(): Promise<React.RefObject<ViewerHandle | null>> {
         onSelectAnnotation={() => {}}
         selectedAnnotationId={null}
         mode="comment"
-        taterMode={false}
         disableCodePathValidation
       />,
     );

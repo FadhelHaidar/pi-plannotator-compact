@@ -23,8 +23,6 @@ describe('Settings Analysis tab', () => {
     await act(async () => {
       root!.render(
         <Settings
-          taterMode={false}
-          onTaterModeChange={() => {}}
           mode="review"
           externalOpen
         />,

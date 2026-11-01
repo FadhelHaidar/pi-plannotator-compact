@@ -60,7 +60,6 @@ async function mountViewer(
         selectedAnnotationId={null}
         mode="comment"
         inputMethod="drag"
-        taterMode={false}
         stickyActions={false}
         disableCodePathValidation
         vimModeEnabled

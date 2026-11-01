@@ -173,7 +173,6 @@ describe.if(hasDom)('Viewer: a diagram comment restored before the diagram mount
             onSelectAnnotation={() => {}}
             selectedAnnotationId={null}
             mode="comment"
-            taterMode={false}
             disableCodePathValidation
             onRestoreReport={(report) => reports.push(report)}
           />

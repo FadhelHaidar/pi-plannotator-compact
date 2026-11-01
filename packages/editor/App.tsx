@@ -48,8 +48,6 @@ import { ThemeProvider } from '@plannotator/ui/components/ThemeProvider';
 import { Tooltip, TooltipProvider } from '@plannotator/ui/components/Tooltip';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
 import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
-import { TaterSpriteRunning } from '@plannotator/ui/components/TaterSpriteRunning';
-import { TaterSpritePullup } from '@plannotator/ui/components/TaterSpritePullup';
 import { useSharing } from '@plannotator/ui/hooks/useSharing';
 import { shareableDocumentMarkdown } from '@plannotator/ui/utils/sharing';
 import { getCallbackConfig, CallbackAction, executeCallback } from '@plannotator/ui/utils/callback';
@@ -559,10 +557,6 @@ const App: React.FC = () => {
   const [editorMode, setEditorMode] = useState<EditorMode>(getEditorMode);
   const [inputMethod, setInputMethod] = useState<InputMethod>(getInputMethod);
   const [compactInputMethod, setCompactInputMethod] = useState<InputMethod>(getInputMethod);
-  const [taterMode, setTaterMode] = useState(() => {
-    const stored = storage.getItem('plannotator-tater-mode');
-    return stored === 'true';
-  });
   const gridEnabled = useConfigValue('gridEnabled');
   const vimModeEnabled = useConfigValue('vimModeEnabled');
   const vimHudEnabled = useConfigValue('vimHudEnabled');
@@ -3612,11 +3606,6 @@ const App: React.FC = () => {
       source.close();
     };
   }, [sourceWatchSubscription.key]);
-
-  const handleTaterModeChange = useCallback((enabled: boolean) => {
-    setTaterMode(enabled);
-    storage.setItem('plannotator-tater-mode', String(enabled));
-  }, []);
 
   const handleEditorModeChange = (mode: EditorMode) => {
     setEditorMode(mode);
@@ -6859,7 +6848,6 @@ const App: React.FC = () => {
           feedbackLabel={answersOnlyFeedback ? SEND_ANSWERS_LABEL : undefined}
           annotateDecision={annotateMode ? annotateDecision : undefined}
           callbackConfig={callbackConfig}
-          taterMode={taterMode}
           mobileSettingsOpen={mobileSettingsOpen}
           gitUser={gitUser}
           autoUpdateSetting={autoUpdateSetting}
@@ -6879,7 +6867,6 @@ const App: React.FC = () => {
           onAIChatToggle={handleAIChatToggle}
           onArchiveCopy={archive.copy}
           onArchiveDone={archive.done}
-          onTaterModeChange={handleTaterModeChange}
           onIdentityChange={handleIdentityChange}
           onUIPreferencesChange={setUiPrefs}
           onOpenSettings={handleOpenSettings}
@@ -7015,8 +7002,6 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <div data-print-region="content" className={`flex-1 flex ${usesDocumentScroll ? 'overflow-visible' : 'overflow-hidden'} relative z-0 ${isResizing ? 'select-none' : ''}`}>
-          {/* Tater sprites — inside content wrapper so z-0 stacking context applies */}
-          {taterMode && <TaterSpriteRunning />}
           {showAgentTerminalOnLeft && agentTerminalPanel}
           {/* Left Sidebar: collapsed tab flags (when sidebar is closed) */}
           {!isCompactTouchLayout && wideModeType === null && !sidebar.isOpen && !goalSetupMode && !isLeftAgentTerminalVisible && !(isHtmlSurface && htmlToolsHidden) && (
@@ -7078,7 +7063,6 @@ const App: React.FC = () => {
                   onInputMethodChange={handleInputMethodChange}
                   mode={editorMode}
                   onModeChange={handleEditorModeChange}
-                  taterMode={taterMode}
                   repoInfo={repoInfo}
                   planDiffStats={planDiff.diffStats}
                   isPlanDiffActive={isPlanDiffActive}
@@ -7114,7 +7098,6 @@ const App: React.FC = () => {
                       onInputMethodChange={handleInputMethodChange}
                       mode={editorMode}
                       onModeChange={handleEditorModeChange}
-                      taterMode={taterMode}
                       showHelpLink
                     />
                   )}
@@ -7169,7 +7152,7 @@ const App: React.FC = () => {
                     className="absolute -top-5 left-0 right-0 mx-auto w-full flex justify-end pointer-events-none"
                     style={annotateReaderMaxWidth === null ? undefined : { maxWidth: annotateReaderMaxWidth ?? 832 }}
                   >
-                    <div className={`pointer-events-auto flex items-center gap-1.5 text-[11px] tracking-wide ${taterMode ? 'mr-[60px]' : 'mr-[4px]'}`}>
+                    <div className={`pointer-events-auto flex items-center gap-1.5 text-[11px] tracking-wide mr-[4px]`}>
                       {canUseWideMode && (['wide', 'focus'] as const).map((type, i) => (
                         <React.Fragment key={type}>
                           {i > 0 && <span aria-hidden className="text-muted-foreground/30 select-none">|</span>}
@@ -7367,7 +7350,6 @@ const App: React.FC = () => {
                     vimHudEnabled={vimModeEnabled && vimHudEnabled}
                     vimHudKeyPanelEnabled={vimHudKeyPanelEnabled}
                     onVimHudKeyPanelChange={handleVimHudKeyPanelChange}
-                    taterMode={taterMode}
                     gridEnabled={gridEnabled}
                     globalAttachments={globalAttachments}
                     onAddGlobalAttachment={handleAddGlobalAttachment}
@@ -7527,7 +7509,6 @@ const App: React.FC = () => {
               : ''
           }
           annotationCount={allAnnotations.length + codeAnnotations.length}
-          taterSprite={taterMode ? <TaterSpritePullup /> : undefined}
           sharingEnabled={canShareCurrentSession}
           markdown={markdown}
           isApiMode={isApiMode && !documentReadOnly}

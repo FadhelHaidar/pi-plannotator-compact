@@ -156,7 +156,6 @@ describe.if(hasDom)('Viewer: an annotation carrying a malformed diagramAnchor', 
             onSelectAnnotation={() => {}}
             selectedAnnotationId={null}
             mode="comment"
-            taterMode={false}
             disableCodePathValidation
           />
           <AnnotationPanel
