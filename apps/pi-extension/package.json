@@ -45,6 +45,8 @@
     "config.ts",
     "progress-widget.ts",
     "auto-keymap.ts",
+    "auto-reload.ts",
+    "package-version.ts",
     "plannotator.json",
     "server/",
     "todo-providers/",

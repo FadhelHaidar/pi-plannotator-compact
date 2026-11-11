@@ -11,9 +11,11 @@ pi install npm:@fadhelhaidar/pi-plannotator-compact
 # Or install the prebuilt GitHub Release:
 pi install 'npm:@fadhelhaidar/pi-plannotator-compact@https://github.com/FadhelHaidar/pi-plannotator-compact/releases/latest/download/plannotator-pi-extension.tgz'
 pi update --extensions
-# Restart Pi or /reload after updating.
+# On Pi older than 0.84.2, restart Pi or /reload after updating.
 pi remove npm:@fadhelhaidar/pi-plannotator-compact
 ```
+
+On Pi 0.84.2 and newer, an in-place update is picked up without a restart: once the new version has been stable on disk and the session is idle (no run, queued message, compaction, dialog, open review/plan/Ask, recent prompt or typing, and an empty editor), Plannotator reloads Pi automatically. Older Pi keeps the `/reload` note. Opt out with `PLANNOTATOR_AUTO_RELOAD=0` or `{ "autoReload": false }` in `~/.plannotator/config.json`. The environment variable wins; the default is on.
 
 The independent release series uses `vX.Y.Z`; the first standalone version is `0.1.1`, following the old fork's `0.1.0`. Both npm and GitHub Release artifacts use the fork-scoped package identity.
 
@@ -170,6 +172,10 @@ Later layers overwrite earlier ones. If a field is omitted, it inherits the valu
   }
 }
 ```
+
+#### Auto-reload
+
+`autoReload` (default `true`) applies only when the running Pi is 0.84.2 or newer. It never reloads during work: the extension checks the session on every poll and again inside the reload command. Set it to `false`, or start Pi with `PLANNOTATOR_AUTO_RELOAD=0`, to keep manual `/reload` behavior.
 
 #### Option reference
 

@@ -8,7 +8,7 @@ Scope: the three separately approved Stage 2 items only — turndown bump, `@pie
 | --- | --- |
 | `6afdc1c` | `@joplin/turndown-plugin-gfm` 1.0.68 in the root, shared and Pi manifests |
 | `fefadb9` | `@pierre/diffs` 1.6.4, worker catalog stubs, partial-hydration patch, edit-session API migration |
-| End-hold commit | Standalone `useEndHold` on the old guide viewport manager |
+| `25e51ee` | Standalone `useEndHold` on the old guide viewport manager, plus `docs/STAGE2-UI-REFRESH.md` |
 
 ## Turndown 1.0.68
 

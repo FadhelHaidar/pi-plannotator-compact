@@ -231,6 +231,15 @@ export interface PlannotatorConfig {
    */
   autoUpdate?: boolean;
   /**
+   * Pi reloads itself once an updated Plannotator package has been stable on
+   * disk for 10s and the session is idle: no run, queued message, compaction,
+   * open dialog, review, plan review or Ask question, submitted prompt,
+   * typing, or text in the editor. One try per version. Requires Pi >= 0.84.2;
+   * older Pi gets a notice to run `/reload` instead. PLANNOTATOR_AUTO_RELOAD
+   * wins over this key. Default: true.
+   */
+  autoReload?: boolean;
+  /**
    * The Claude Code mod (apps/hook/hooks/mod/): non-blocking plan review,
    * annotate, code review and annotate-last, plus "Ask this session", where
    * Claude Code runs hooks modules. On by default; `false` turns it off.
@@ -875,6 +884,25 @@ export function resolveAutoUpdate(
 }
 
 /**
+ * Resolve whether Pi may reload itself after a Plannotator update.
+ *
+ * Priority (highest wins):
+ *   PLANNOTATOR_AUTO_RELOAD env var  →  config.autoReload  →  default true
+ *
+ * Env `1` / `true` / `on` turn it on and `0` / `false` / `off` / `disabled`
+ * turn it off; an empty or unrecognized value counts as unset. Pi before
+ * 0.84.2 gets the `/reload` notice instead, whatever this returns.
+ */
+export function resolveAutoReload(
+  config: PlannotatorConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const fromEnv = parseAutoReloadEnv(env);
+  if (fromEnv !== undefined) return fromEnv;
+  return coerceConfigBoolean(config.autoReload, true);
+}
+
+/**
  * Resolve whether the Claude Code mod is on (default on; this is the opt-out).
  *
  * Priority (highest wins):
@@ -967,6 +995,14 @@ export function agentToolSaveFailed(toSave: { agentTool?: unknown }): boolean {
 /** The PLANNOTATOR_AUTO_UPDATE override, or undefined when it does not decide. */
 export function parseAutoUpdateEnv(env: NodeJS.ProcessEnv = process.env): boolean | undefined {
   const v = env.PLANNOTATOR_AUTO_UPDATE?.trim().toLowerCase();
+  if (v === "1" || v === "true" || v === "on") return true;
+  if (v === "0" || v === "false" || v === "off" || v === "disabled") return false;
+  return undefined;
+}
+
+/** The PLANNOTATOR_AUTO_RELOAD override, or undefined when it does not decide. */
+export function parseAutoReloadEnv(env: NodeJS.ProcessEnv = process.env): boolean | undefined {
+  const v = env.PLANNOTATOR_AUTO_RELOAD?.trim().toLowerCase();
   if (v === "1" || v === "true" || v === "on") return true;
   if (v === "0" || v === "false" || v === "off" || v === "disabled") return false;
   return undefined;

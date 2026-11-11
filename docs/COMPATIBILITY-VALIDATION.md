@@ -83,4 +83,21 @@ Packaging produced `artifacts/plannotator-pi-extension.tgz`; closure checks foun
 - Fresh independent source review found no issues and returned “Merge verdict: OK.” It checked connected bridge event ordering, latch preservation, schemas and all display-helper callers; it did not independently rerun the test matrix or live model turns.
 - Active LSP checks found no production TypeScript errors in changed files. Test files are excluded from the project tsconfig and report inferred-project `bun:test` resolution warnings. Existing broad lint warnings are not a clean-lint claim; the pre-existing `!wasOff === (mode !== "off")` visibility comparison was reviewed and marked a false positive.
 
-Stage 2 is not implemented. Optional UI/dependency ports remain separate follow-up work. The Pi version floor is unchanged; compatibility evidence above is bounded, not a guarantee of every release or complete browser/provider parity.
+Stage 2 was subsequently implemented as turndown 1.0.68, `@pierre/diffs` 1.6.4 and End-hold (`docs/STAGE2-UI-REFRESH.md`). Auto-reload is a separate follow-up on the same branch. The Pi version floor is unchanged; compatibility evidence above is bounded, not a guarantee of every release or complete browser/provider parity.
+
+## Auto-reload follow-up
+
+`apps/pi-extension/auto-reload.ts` ports the Pi half of upstream PR #2356. It checks on a 2 s poll and again inside the `plannotator-reload` command; a new version must be stable on disk for 10 s, the install must look finished, and the session must have no run, queued message, compaction, dialog, open review/plan/Ask, submitted prompt within 30 s, typing within 15 s, or editor text. One try per version; the marker survives `ctx.reload()`. Pi before 0.84.2 gets the `/reload` note instead of `sendUserMessage` with `expandPromptTemplates`. `autoReload` defaults on; `PLANNOTATOR_AUTO_RELOAD` wins over the config key.
+
+| Check | Result |
+| --- | --- |
+| `auto-reload.test.ts` | 11 pass, 0 fail |
+| `package-version.test.ts` | 5 pass, 0 fail |
+| `packages/shared/config.test.ts` | 109 pass, 0 fail |
+| Pi typecheck | Pass |
+| `bun run build:pi` | Pass (review 16,588.44 kB / hook 21,995.88 kB) |
+| `bun test --timeout 20000 apps/pi-extension` | 520 pass, 2 skip, 3 fail |
+| Packed package | 228 files, 41.36 MB unpacked, 10.98 MB packed, shasum `ed478c13029c1ebcb77d0093ec3e4c778bd6ca2b`; smoke 178 runtime TS files |
+| Isolated packed install/discovery/removal | Pass |
+
+The three Pi-suite failures are the port-listener assertions in `apps/pi-extension/server/network.test.ts:178`, `:224` and `:243` under the current Bun 1.4.2. They reproduce on a clean HEAD with this work stashed, so they are recorded as pre-existing runner/environment behavior, not auto-reload regressions; the other 520 tests pass. Not exercised: a real `pi update --extensions` against a running session, an actual timed reload on Pi 0.84.2+, or the older-Pi note on a real 0.79.1 host. The tests fake the event bus and `reload()`; they do not prove live terminal/provider behavior.

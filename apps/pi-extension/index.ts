@@ -34,8 +34,9 @@ import {
 	parseChecklist,
 	renderCompletedChecklist,
 } from "./generated/checklist.ts";
-import { loadConfig, resolveAgentTool, resolvePiProgressWidgetMode, resolveUseJina, saveConfig } from "./generated/config.ts";
+import { loadConfig, resolveAgentTool, resolveAutoReload, resolvePiProgressWidgetMode, resolveUseJina, saveConfig } from "./generated/config.ts";
 import { createProgressWidget, type ProgressWidgetMode } from "./progress-widget.ts";
+import { setupAutoReload } from "./auto-reload.ts";
 import { ensureAltPlanRemap } from "./auto-keymap.ts";
 import { readImprovementHook } from "./generated/improvement-hooks.ts";
 import { composeImproveContext } from "./generated/pfm-reminder.ts";
@@ -492,6 +493,27 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 	let todoProvider: TodoProvider | undefined;
 	/** Latch: no provider found, or one sync failed. Cleared on return to idle. */
 	let todoProviderDisabled = false;
+
+	// Reload Pi after an in-place package update, but only when no work can be
+	// lost. The command and listeners are registered once per extension
+	// instance; process globals carry the one-try marker across the reload.
+	setupAutoReload(pi, {
+		enabled: resolveAutoReload(loadConfig(), process.env),
+		plannotatorBusy: () => {
+			if (pendingPlanReview) return "an open plan review";
+			if (openReviews.openAll().length > 0) return "an open review";
+			if (sessionBridgeHub.hasActiveAsk) return "an Ask question";
+			return null;
+		},
+		piVersion: async () => {
+			try {
+				const sdk = (await import("@earendil-works/pi-coding-agent")) as { VERSION?: unknown };
+				return typeof sdk.VERSION === "string" ? sdk.VERSION : null;
+			} catch {
+				return null;
+			}
+		},
+	});
 
 	pi.on("session_start", (_event, ctx) => {
 		sessionAlive = true;
