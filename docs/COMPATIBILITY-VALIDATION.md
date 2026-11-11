@@ -96,8 +96,8 @@ Stage 2 was subsequently implemented as turndown 1.0.68, `@pierre/diffs` 1.6.4 a
 | `packages/shared/config.test.ts` | 109 pass, 0 fail |
 | Pi typecheck | Pass |
 | `bun run build:pi` | Pass (review 16,588.44 kB / hook 21,995.88 kB) |
-| `bun test --timeout 20000 apps/pi-extension` | 526 pass, 2 skip, 3 fail |
+| `bun test --timeout 20000 apps/pi-extension` | 529 pass, 2 skip, 0 fail |
 | Packed package | 228 files, 41.37 MB unpacked, 10.98 MB packed, shasum `52783dccbd2806a7932b5fda7f719a0be6699353`; smoke 178 runtime TS files |
 | Isolated packed install/discovery/removal | Pass |
 
-The three Pi-suite failures are the port-listener assertions in `apps/pi-extension/server/network.test.ts:178`, `:224` and `:243` under the current Bun 1.4.2. They reproduce on a clean HEAD with this work stashed, so they are recorded as pre-existing runner/environment behavior, not auto-reload regressions; the other 526 tests pass. Not exercised: a real `pi update --extensions` against a running session, an actual timed reload on Pi 0.84.2+, or the older-Pi note on a real 0.79.1 host. The tests fake the event bus and `reload()`; they do not prove live terminal/provider behavior.
+The port-listener assertions now compare against each server's own listener baseline, so Bun 1.4.2's internal `setupConnectionsTracking` listener is not mistaken for a leak; the same tests pass under the CI-pinned Bun 1.3.14. Not exercised: a real `pi update --extensions` against a running session, an actual timed reload on Pi 0.84.2+, or the older-Pi note on a real 0.79.1 host. The tests fake the event bus and `reload()`; they do not prove live terminal/provider behavior.
