@@ -3,7 +3,7 @@ import type React from 'react';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, FileDiffMetadata } from '@pierre/diffs';
 import { useStableCallback } from '@pierre/diffs/react';
-import type { CodeViewHandle, CreateEditor } from '@pierre/diffs/react';
+import type { CodeViewHandle, EditorFactory } from '@pierre/diffs/react';
 import type { CodeAnnotation, DiffAnnotationMetadata } from '@plannotator/ui/types';
 import type { DiffFile } from '../types';
 import { isContentConsistentWithPatch } from '../utils/patchConsistency';
@@ -14,6 +14,11 @@ import { buildSelectionActionElement } from './selectionActionPopover';
 import {
   createPierreEditor,
   loadPierreEdit,
+  type EditCompletionDecision,
+  type EditorChangeEvent,
+  type EditorType,
+  type FileDiffEditCompleteEvent,
+  type FileEditCompleteEvent,
   type PierreEditorInstance,
   type PierreEditorOptions,
   type PierreSelectionActionContext,
@@ -98,7 +103,7 @@ export interface EditSelectionComment {
 
 interface UseEditSessionParams {
   enabled: boolean;
-  viewerRef: React.RefObject<CodeViewHandle<DiffAnnotationMetadata> | null>;
+  viewerRef: React.RefObject<CodeViewHandle<DiffAnnotationMetadata, undefined> | null>;
   itemIdToFileRef: React.RefObject<Map<string, DiffFile>>;
   fileSetKeyRef: React.RefObject<string>;
   reviewBaseRef: React.RefObject<string | undefined>;
@@ -164,20 +169,23 @@ export interface EditSessionApi {
   collapseSelection: () => void;
   /** CodeView prop: fires per document change while a session is active. */
   onItemEditChange: (
+    event: EditorChangeEvent<'file-diff', DiffAnnotationMetadata, undefined>,
     item: CodeViewItem<DiffAnnotationMetadata>,
-    file?: { contents: string },
   ) => void;
   /** CodeView prop: fires once when a session with changes ends. */
   onItemEditComplete: (
+    event:
+      | FileDiffEditCompleteEvent<DiffAnnotationMetadata, undefined>
+      | FileEditCompleteEvent<DiffAnnotationMetadata, undefined>,
     item: CodeViewItem<DiffAnnotationMetadata>,
-    file: { contents: string },
-  ) => void;
+    nextItem: CodeViewItem<DiffAnnotationMetadata>,
+  ) => EditCompletionDecision;
   /** EditProvider factory. Returns undefined until the lazy editor chunk has
    * loaded — a defensive guard the wired flow never hits (startEdit awaits
    * the chunk before any item enters edit mode; the React wrapper would
    * throw on an undefined return). Upstream's React `CreateEditor` type does
    * not model the undefined return, hence the cast where this is produced. */
-  createEditor: CreateEditor<DiffAnnotationMetadata>;
+  createEditor: EditorFactory<DiffAnnotationMetadata, undefined>;
   /** Editor construction options (markers wired via onAttach). Structural
    * subset of Pierre's EditorOptions so the generic variance stays out of
    * app code. */
@@ -316,6 +324,8 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
         ?.getRenderedItems()
         .find((r) => r.id === session.itemId);
       if (rendered != null && rendered.type === 'diff') {
+        // SAFETY: @pierre/diffs 1.6 does not expose hunksRenderer; this is the
+        // same protected escape hatch the pinned 1.3 workaround used.
         const instance = rendered.instance as unknown as {
           hunksRenderer?: { clearRenderCache(): void };
           rerender(): void;
@@ -490,7 +500,7 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
       }
       const hydrated = await ensureFullContent(itemId, file);
       if (fileSetKeyRef.current !== generation) return;
-      if (!hydrated.ok) {
+      if ('reason' in hydrated) {
         markUnavailable(file.path, hydrated.reason);
         refreshItem(itemId);
         return;
@@ -535,7 +545,10 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
   });
 
   const onItemEditChange = useStableCallback(
-    (item: CodeViewItem<DiffAnnotationMetadata>, file?: { contents: string }) => {
+    (
+      event: EditorChangeEvent<'file-diff', DiffAnnotationMetadata, undefined>,
+      item: CodeViewItem<DiffAnnotationMetadata>,
+    ) => {
       const session = sessionRef.current;
       if (session && session.itemId === item.id) {
         session.dirty = true;
@@ -543,7 +556,7 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
         // lazy, so holding it costs nothing per keystroke and the document
         // stays readable even after an unrouted teardown (see
         // recoverDirtySessionHunks).
-        if (file) session.latestContents = file;
+        session.latestContents = event.file;
         // Refresh the HUD's net change count on a short debounce: the count is
         // a full-content line diff, so once per pause rather than per
         // keystroke. Guarded against the session ending before the timer fires.
@@ -559,13 +572,21 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
   );
 
   const onItemEditComplete = useStableCallback(
-    (item: CodeViewItem<DiffAnnotationMetadata>, file: { contents: string }) => {
+    (
+      event:
+        | FileDiffEditCompleteEvent<DiffAnnotationMetadata, undefined>
+        | FileEditCompleteEvent<DiffAnnotationMetadata, undefined>,
+      item: CodeViewItem<DiffAnnotationMetadata>,
+    ): EditCompletionDecision => {
+      // The all-files surface only renders diffs; a file item cannot own a
+      // suggestion session, so decline it rather than reading diff-only fields.
+      if (!('fileDiff' in event)) return 'reject';
       const session = sessionRef.current;
-      if (!session || session.itemId !== item.id) return;
+      if (!session || session.itemId !== item.id) return 'reject';
       if (!session.suppressSuggestions) {
         // Copy immediately: `contents` is a live getter over the (already
         // cleaned-up) session document.
-        const edited = String(file.contents);
+        const edited = String(event.newFile?.contents ?? '');
         const hunks = deriveSuggestionHunks(session.preEditContent, edited);
         if (hunks.length > 0) onAddSuggestionsRef.current?.(session.filePath, hunks);
       }
@@ -581,17 +602,23 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
         resetChangeCount();
         setTimeout(() => writeRestore(session), 0);
       }
+      // Never install the edited diff: the pristine document is restored by
+      // writeRestore (suggestions are derived above).
+      return 'reject';
     },
   );
 
   // Cast rationale: our factory returns undefined before the lazy chunk has
   // loaded — a guard the wired flow never hits (startEdit awaits the chunk
   // before flipping edit on; the React wrapper throws on an undefined
-  // return). Upstream's React `CreateEditor` type does not model the
-  // undefined return, hence the cast.
-  const createEditor = useStableCallback((options: PierreEditorOptions) =>
-    createPierreEditor(options),
-  ) as unknown as CreateEditor<DiffAnnotationMetadata>;
+  // return). Upstream's `EditorFactory` type does not model the undefined
+  // return, hence the cast.
+  // SAFETY: createPierreEditor returns undefined only before the lazy chunk
+  // loads; startEdit awaits that chunk before enabling edit on the item.
+  const createEditor = useStableCallback(
+    (editorType: EditorType, options: PierreEditorOptions, editStateKey?: string) =>
+      createPierreEditor(editorType, options, editStateKey),
+  ) as unknown as EditorFactory<DiffAnnotationMetadata, undefined>;
 
   /** Marker projection is intentionally disabled: wavy underlines read as
    * errors in every editor's visual language, which misrepresents comments.
@@ -605,7 +632,7 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
     const editor = sessionRef.current?.editor;
     if (!editor) return;
     try {
-      const sel = editor.getState().selections?.at(-1);
+      const sel = editor.getViewState().selections?.at(-1);
       if (!sel) return;
       editor.setSelections([{ start: sel.end, end: sel.end, direction: 'none' }]);
     } catch {

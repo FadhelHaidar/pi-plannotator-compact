@@ -7,12 +7,11 @@ import type {
   CodeViewOptions,
   DiffLineAnnotation,
   FileDiffMetadata,
-  LineAnnotation,
   PostRenderPhase,
   SelectedLineRange,
   VirtualFileMetrics,
 } from '@pierre/diffs';
-import { CodeView, EditProvider, type CodeViewHandle, useStableCallback } from '@pierre/diffs/react';
+import { CodeView, EditProvider, type CodeViewAnnotationArgs, type CodeViewHandle, useStableCallback } from '@pierre/diffs/react';
 import type { DiffTokenEventBaseProps } from '@pierre/diffs';
 import type {
   CodeAnnotation,
@@ -662,7 +661,7 @@ export const AllFilesCodeView: React.FC<AllFilesCodeViewProps> = ({
   // theme pair in step with the UI theme.
   const workerPoolReady = useIsWorkerPoolReadyOrDisabled();
   useWorkerPoolThemeSync(pierreTheme.syntaxTheme);
-  const viewerRef = useRef<CodeViewHandle<DiffAnnotationMetadata> | null>(null);
+  const viewerRef = useRef<CodeViewHandle<DiffAnnotationMetadata, undefined> | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // State mirror of the scroll container so the leading-content portal can
   // mount once CodeView has rendered it (a plain ref can't trigger that).
@@ -1006,18 +1005,16 @@ export const AllFilesCodeView: React.FC<AllFilesCodeViewProps> = ({
     return map;
   }, [annotations, prUrl, prDiffScope]);
 
-  // Render a single annotation from item state. `renderAnnotation` receives both
-  // the LineAnnotation and DiffLineAnnotation union — guard `'side' in
+  // Render a single annotation from item state. CodeView calls it as
+  // (annotation, file or fileDiff, item): the owning item is the THIRD argument
+  // (it was the second before @pierre/diffs 1.6). Its method-style prop type is
+  // checked bivariantly, so a two-argument handler still compiles and silently
+  // gets the fileDiff as `item`: keep the tuple type. Guard `'side' in
   // annotation && item.type === 'diff'` (the Diffshub pattern) so file-item
   // annotations (none here) and metadata-less annotations are skipped. Actions
   // route by the OWNING item, not an active-file side channel.
   const renderAnnotation = useStableCallback(
-    (
-      annotation:
-        | DiffLineAnnotation<DiffAnnotationMetadata>
-        | LineAnnotation<DiffAnnotationMetadata>,
-      item: CodeViewItem<DiffAnnotationMetadata>,
-    ) => {
+    (...[annotation, , item]: CodeViewAnnotationArgs<DiffAnnotationMetadata>) => {
       if (!('side' in annotation) || item.type !== 'diff') return null;
       if (!annotation.metadata) return null;
       if (annotation.metadata.kind === 'ai-marker') {
@@ -2679,7 +2676,7 @@ export const AllFilesCodeView: React.FC<AllFilesCodeViewProps> = ({
   );
   itemMetricsRef.current = itemMetrics;
 
-  const options = useMemo<CodeViewOptions<DiffAnnotationMetadata>>(
+  const options = useMemo<CodeViewOptions<DiffAnnotationMetadata, undefined>>(
     () => ({
       themeType: pierreTheme.type,
       unsafeCSS: pierreTheme.css,
@@ -2713,10 +2710,16 @@ export const AllFilesCodeView: React.FC<AllFilesCodeViewProps> = ({
         import.meta.env.VITE_PIERRE_VALIDATE_HEIGHTS === '1' && {
           __devOnlyValidateItemHeights: true,
         }),
-      onLineSelectionEnd(range, context) {
+      onLineSelectionEnd(
+        range: SelectedLineRange,
+        context: { item: CodeViewItem<DiffAnnotationMetadata> },
+      ) {
         handleLineSelectionEnd(range, context.item);
       },
-      onGutterUtilityClick(range, context) {
+      onGutterUtilityClick(
+        range: SelectedLineRange,
+        context: { item: CodeViewItem<DiffAnnotationMetadata> },
+      ) {
         handleGutterUtilityClick(range, context.item);
       },
       // P7: token code navigation. CodeView appends the owning-item context as
