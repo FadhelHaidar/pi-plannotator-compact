@@ -397,6 +397,14 @@ export function renderTemplate(template: string, vars: PromptVariables): PromptR
   return { text, unknownVariables: [...unknownVariables] };
 }
 
+/** Remove only the item's own redundant ordinal, without changing stored checklist text. */
+export function checklistDisplayText(item: { step: number; text: string }): string {
+  const prefix = `${item.step}.`;
+  return item.text.startsWith(prefix) && /^\s/.test(item.text.slice(prefix.length))
+    ? item.text.slice(prefix.length).trimStart()
+    : item.text;
+}
+
 export function formatTodoList(items: Array<{ step: number; text: string; completed: boolean }>): {
   todoList: string;
   completedCount: number;
@@ -407,7 +415,7 @@ export function formatTodoList(items: Array<{ step: number; text: string; comple
   const completedCount = items.filter((item) => item.completed).length;
   const remainingItems = items.filter((item) => !item.completed);
   const todoList = remainingItems.length
-    ? remainingItems.map((item) => `- [ ] ${item.step}. ${item.text}`).join("\n")
+    ? remainingItems.map((item) => `- [ ] ${item.step}. ${checklistDisplayText(item)}`).join("\n")
     : "";
 
   return {

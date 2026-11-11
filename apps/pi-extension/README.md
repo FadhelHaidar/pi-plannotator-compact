@@ -27,7 +27,7 @@ Your `~/.plannotator` data/config and Pi keybindings are retained. Do not load b
 
 ## Pi version and project trust
 
-Requires **Pi 0.79.1 or newer** and its supported Node runtime. Updating only this extension does not repair older Pi security behavior; update Pi itself too.
+Requires **Pi 0.79.1 or newer** and its supported Node runtime. Typechecking, loader/schema validation and focused regression tests cover **0.79.1, 1.2.0, 1.5.0 and 1.5.2**; packed install/load/remove checks cover the floor and latest. This is not a guarantee for every intermediate release or external provider. See the repository's [validation report](https://github.com/FadhelHaidar/pi-plannotator-compact/blob/main/docs/COMPATIBILITY-VALIDATION.md) for test evidence and manual-test limits. Updating only this extension does not repair older Pi security behavior; update Pi itself too.
 
 Pi 0.79 introduced trust for repository-local settings, instructions, resources and packages. Plannotator honors that decision for `.pi/plannotator.json`. Noninteractive sessions ignore project inputs unless already trusted or started with `--approve` (`-a`); `--no-approve` (`-na`) disables project inputs even when previously trusted.
 
@@ -103,6 +103,7 @@ Control it with:
 ```
 
 - No argument cycles off → compact → full (same as `Alt+T`); `off`/`compact`/`full` set the mode explicitly; `status` only reports. The legacy `on` argument still works and means `compact`.
+- Full mode keeps all steps, with completed rows checked and muted. A matching number already present in checkbox text is displayed only once; execution step IDs and saved plan text are unchanged.
 - Turning the tracker off hides the checklist widget only. The footer count (`📋 done/total`) and execution behavior are unchanged.
 - The mode (`piProgressWidgetMode`, default `compact`) is remembered across sessions in `~/.plannotator/config.json`. The old boolean `piProgressWidgetVisible` key still loads (mapped to compact/off) but new saves write `piProgressWidgetMode`.
 - A hidden tracker **enforces the todo-list mirror**: the checklist keeps syncing to any detected todo provider (pi-todos) even when `todoProvider` is configured `"off"`, so hiding the widget never removes every tracking surface. With no provider detected, Plannotator says so and progress stays visible in the footer count.

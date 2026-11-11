@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildPromptVariables, loadPlannotatorConfig, formatTodoList, renderTemplate, resolveExecutionMode, resolvePhaseProfile, THINKING_LEVELS } from "./config.ts";
+import { checklistDisplayText, buildPromptVariables, loadPlannotatorConfig, formatTodoList, renderTemplate, resolveExecutionMode, resolvePhaseProfile, THINKING_LEVELS } from "./config.ts";
 
 const tempDirs: string[] = [];
 const originalHome = process.env.HOME;
@@ -373,5 +373,27 @@ describe("plannotator config", () => {
     expect(stats.totalCount).toBe(3);
     expect(stats.remainingCount).toBe(2);
     expect(stats.todoList).toBe("- [ ] 2. Second\n- [ ] 3. Third");
+  });
+});
+
+
+describe("checklist display ordinals", () => {
+  test("strips only one matching dot ordinal with whitespace", () => {
+    for (const [step, text, expected] of [
+      [1, "1. First", "First"], [2, "2.\tSecond", "Second"],
+      [2, "2026. Budget", "2026. Budget"], [2, "1. Different", "1. Different"],
+      [1, "1.No space", "1.No space"], [1, "1) Parenthesis", "1) Parenthesis"],
+      [1, "1. 1. Nested", "1. Nested"], [1, "Version 1. Notes", "Version 1. Notes"],
+    ] as const) {
+      expect(checklistDisplayText({ step, text })).toBe(expected);
+    }
+    const items = [
+      { step: 1, text: "1. Finished", completed: true },
+      { step: 2, text: "2. Pending", completed: false },
+      { step: 3, text: "2026. Budget", completed: false },
+    ];
+    const before = JSON.stringify(items);
+    expect(formatTodoList(items)).toEqual({ todoList: "- [ ] 2. Pending\n- [ ] 3. 2026. Budget", completedCount: 1, totalCount: 3, remainingCount: 2 });
+    expect(JSON.stringify(items)).toBe(before);
   });
 });

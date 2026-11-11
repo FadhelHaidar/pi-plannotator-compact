@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { validateToolArguments } from "@earendil-works/pi-ai";
+import { createPiSessionBridgeHub, PLANNOTATOR_ASK_CUSTOM_TYPE } from "./pi-session-bridge.ts";
 import plannotator, { PROJECT_TRUST_CAPABILITY_WARNING } from "./index.ts";
 
 type Handler = (event: unknown, context: ReturnType<typeof createContext>) => unknown;
@@ -109,6 +111,8 @@ function createRuntime(initialTools: string[] = ["read", "bash", "edit", "write"
 	const commands = new Map<string, { handler: (args: string, context: ReturnType<typeof createContext>) => unknown }>();
 	const handlers = new Map<string, Handler[]>();
 	const persisted: Array<Record<string, unknown>> = [];
+	const tools = new Map<string, { name: string; parameters: unknown }>();
+	const sent: Array<{ customType: string; content: unknown; details?: unknown }> = [];
 
 	let activeTools = [...initialTools];
 
@@ -128,8 +132,8 @@ function createRuntime(initialTools: string[] = ["read", "bash", "edit", "write"
 		},
 		registerFlag: () => undefined,
 		registerShortcut: () => undefined,
-		registerTool: () => undefined,
-		sendMessage: () => undefined,
+		registerTool: (tool: { name: string; parameters: unknown }) => tools.set(tool.name, tool),
+		sendMessage: (message: { customType: string; content: unknown; details?: unknown }) => { sent.push(message); },
 		sendUserMessage: () => undefined,
 		setActiveTools: (tools: string[]) => {
 			activeTools = [...tools];
@@ -142,6 +146,9 @@ function createRuntime(initialTools: string[] = ["read", "bash", "edit", "write"
 
 	return {
 		commands,
+		pi,
+		tools,
+		sent,
 		lastPersistedState: () => persisted.at(-1),
 		run: async (event: string, context: ReturnType<typeof createContext>, payload: unknown = {}) => {
 			const results: unknown[] = [];
@@ -183,6 +190,97 @@ function executingContext(
 function templateWarnings(context: ReturnType<typeof createContext>): Array<{ message: string; level: string | undefined }> {
 	return context.notifications.filter((n) => n.level === "warning" && n.message.includes("unknown template variables"));
 }
+
+describe("Plannotator Ask phase isolation", () => {
+	for (const phase of ["planning", "executing", "idle"] as const) {
+		test(`Ask completes without phase prelude or consuming ${phase} latches`, async () => {
+			const cwd = makeWorkspace();
+			writeFileSync(join(cwd, "PLAN.md"), "- [ ] 1. Step one\n");
+			const runtime = createRuntime();
+			const context = phase === "executing" ? executingContext(cwd) : createContext({ cwd });
+			await runtime.run("session_start", context);
+			if (phase !== "executing") {
+				await runtime.commands.get("plannotator-plan-mode")?.handler("", context);
+				if (phase === "idle") await runtime.commands.get("plannotator-plan-mode")?.handler("", context);
+			}
+			const before = runtime.lastPersistedState();
+			const hub = createPiSessionBridgeHub(runtime.pi as never);
+			const bridge = hub.createBridge({ ...context, mode: "tui", hasPendingMessages: () => false, abort: () => undefined } as never, {});
+			const calls: unknown[] = [];
+			const controller = new AbortController();
+			try {
+				bridge.ask({ askId: "phase-ask", text: "Explain this plan", mode: "turn" }, {
+					delta: (text) => calls.push(["delta", text]),
+					done: (text) => calls.push(["done", text]),
+					error: (code) => calls.push(["error", code]),
+				}, controller.signal);
+				const message = runtime.sent.at(-1)!;
+				expect(message.customType).toBe(PLANNOTATOR_ASK_CUSTOM_TYPE);
+				const preludes = await runtime.run("before_agent_start", context, { messageType: "custom", message });
+				await runtime.run("agent_start", context);
+				await runtime.run("turn_start", context);
+				await runtime.run("message_start", context, { message: { role: "custom", ...message } });
+				// Pi delivers injected before_agent_start messages after the triggering message.
+				for (const prelude of preludes as PromptResult[]) {
+					if (prelude?.message) await runtime.run("message_start", context, { message: { role: "custom", ...prelude.message } });
+				}
+				await runtime.run("message_start", context, { message: { role: "assistant" } });
+				await runtime.run("message_update", context, { assistantMessageEvent: { type: "text_delta", delta: "Answer" } });
+				await runtime.run("agent_end", context, { messages: [{ role: "assistant", stopReason: "stop", content: [] }] });
+				await runtime.run("agent_settled", context);
+				expect(calls).toEqual([["delta", "Answer"], ["done", "Answer"]]);
+				expect(preludes.every((result) => result === undefined)).toBe(true);
+				expect(runtime.lastPersistedState()).toBe(before);
+			} finally {
+				controller.abort();
+			}
+			const next = await startAgent(runtime, context);
+			expect(next?.message?.details).toEqual({ phase });
+			expect(await runtime.run("before_agent_start", context, { messageType: "custom", message: { customType: PLANNOTATOR_ASK_CUSTOM_TYPE } })).toEqual([undefined]);
+			const later = await startAgent(runtime, context);
+			expect(later?.message?.customType).toBe(phase === "executing" ? "plannotator-context" : undefined);
+		});
+	}
+
+	for (const payload of [
+		{ messageType: "user", prompt: "Plan this", message: { customType: PLANNOTATOR_ASK_CUSTOM_TYPE } },
+		{},
+		{ message: { customType: PLANNOTATOR_ASK_CUSTOM_TYPE } },
+		{ messageType: "custom", message: { customType: "unrelated-extension" } },
+	]) {
+		test(`non-Ask trigger keeps framing: ${JSON.stringify(payload)}`, async () => {
+			const cwd = makeWorkspace();
+			const runtime = createRuntime();
+			const context = createContext({ cwd });
+			await runtime.run("session_start", context);
+			await runtime.commands.get("plannotator-plan-mode")?.handler("", context);
+			const [result] = await runtime.run("before_agent_start", context, payload) as PromptResult[];
+			expect(result?.message?.details).toEqual({ phase: "planning" });
+			expect(runtime.lastPersistedState()).toMatchObject({ framingDelivered: true });
+		});
+	}
+});
+
+describe("Plannotator JSON tool schemas", () => {
+	test("preserve required fields, descriptions and numeric coercion", () => {
+		const runtime = createRuntime();
+		const done = runtime.tools.get("plannotator_mark_done")!;
+		const submit = runtime.tools.get("plannotator_submit_plan")!;
+		expect(done.parameters).toEqual({
+			type: "object", properties: { step: { type: "number", multipleOf: 1, description: "One-based number of the completed plan checklist step." } }, required: ["step"],
+		});
+		expect(submit.parameters).toEqual({
+			type: "object", properties: { filePath: { type: "string", description: "Path to the markdown plan file, relative to the working directory. Must end in .md or .mdx and resolve inside cwd." } }, required: ["filePath"],
+		});
+		const validate = (tool: typeof done, args: unknown) => validateToolArguments(tool as never, { type: "toolCall", id: "t", name: tool.name, arguments: args } as never);
+		expect(validate(done, { step: "2" })).toEqual({ step: 2 });
+		expect(validate(done, { step: 0 })).toEqual({ step: 0 });
+		expect(() => validate(done, { step: 1.5 })).toThrow();
+		expect(() => validate(done, {})).toThrow();
+		expect(validate(submit, { filePath: "PLAN.md" })).toEqual({ filePath: "PLAN.md" });
+		expect(() => validate(submit, {})).toThrow();
+	});
+});
 
 describe("Plannotator phase framing messages", () => {
 	test("before_agent_start never returns a systemPrompt in any phase", async () => {

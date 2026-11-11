@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { formatTodoList } from "./config.ts";
+import { checklistDisplayText, formatTodoList } from "./config.ts";
 
 export type ProgressWidgetMode = "compact" | "full";
 
@@ -22,15 +22,15 @@ export function createProgressWidget(
 		if (mode === "full") {
 			for (const item of snapshot) {
 				if (item.completed) {
-					lines.push(theme.fg("success", "☑ ") + theme.fg("muted", `${item.step}. ${item.text}`.replace(/[\r\n\t]+/g, " ")));
+					lines.push(theme.fg("success", "☑ ") + theme.fg("muted", `${item.step}. ${checklistDisplayText(item)}`.replace(/[\r\n\t]+/g, " ")));
 				} else {
-					lines.push(theme.fg("muted", "☐ ") + `${item.step}. ${item.text}`.replace(/[\r\n\t]+/g, " "));
+					lines.push(theme.fg("muted", "☐ ") + `${item.step}. ${checklistDisplayText(item)}`.replace(/[\r\n\t]+/g, " "));
 				}
 			}
 		} else {
 			const pending = snapshot.filter((item) => !item.completed);
 			for (const item of pending.slice(0, 3)) {
-				lines.push(theme.fg("muted", `☐ ${item.step}. `) + item.text.replace(/[\r\n\t]+/g, " "));
+				lines.push(theme.fg("muted", `☐ ${item.step}. `) + checklistDisplayText(item).replace(/[\r\n\t]+/g, " "));
 			}
 			if (pending.length > 3) lines.push(theme.fg("muted", `… ${pending.length - 3} more pending`));
 		}
