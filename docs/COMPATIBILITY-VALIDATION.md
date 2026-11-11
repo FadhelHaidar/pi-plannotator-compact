@@ -99,5 +99,10 @@ Stage 2 was subsequently implemented as turndown 1.0.68, `@pierre/diffs` 1.6.4 a
 | `bun test --timeout 20000 apps/pi-extension` | 529 pass, 2 skip, 0 fail |
 | Packed package | 228 files, 41.37 MB unpacked, 10.98 MB packed, shasum `52783dccbd2806a7932b5fda7f719a0be6699353`; smoke 178 runtime TS files |
 | Isolated packed install/discovery/removal | Pass |
+| Live tmux check, Pi 1.5.2, isolated HOME | Pass: idle reload, draft hold, disabled note |
 
-The port-listener assertions now compare against each server's own listener baseline, so Bun 1.4.2's internal `setupConnectionsTracking` listener is not mistaken for a leak; the same tests pass under the CI-pinned Bun 1.3.14. Not exercised: a real `pi update --extensions` against a running session, an actual timed reload on Pi 0.84.2+, or the older-Pi note on a real 0.79.1 host. The tests fake the event bus and `reload()`; they do not prove live terminal/provider behavior.
+The port-listener assertions now compare against each server's own listener baseline, so Bun 1.4.2's internal `setupConnectionsTracking` listener is not mistaken for a leak; the same tests pass under the CI-pinned Bun 1.3.14.
+
+The live check used a disposable `HOME`/`PI_CODING_AGENT_DIR`, installed the packed tarball, and launched `pi --offline --no-session` on a private tmux socket. Mutating the installed package version by hand produced the real TUI note `Plannotator updated to 0.1.2. Pi reloaded while idle.`; a second bump stayed blocked while text was in the editor and reloaded only after it was cleared; with `PLANNOTATOR_AUTO_RELOAD=0` the TUI showed the `/reload` warning and did not reload. The real `~/.pi/agent/settings.json` and `~/.plannotator` were unchanged, and the sandbox was removed.
+
+Not exercised: a real `pi update --extensions` (the on-disk version was changed directly), a live provider/model turn, or the older-Pi note on a real 0.79.1 host. The automated tests still fake the event bus and `reload()`.
