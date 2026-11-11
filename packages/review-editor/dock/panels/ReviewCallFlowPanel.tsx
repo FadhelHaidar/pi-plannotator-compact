@@ -294,6 +294,7 @@ export function ReviewCallFlowPanel() {
     );
   }
 
+  if (analysis.status !== 'ready') return null;
   const { data } = analysis;
   const skippedFileCount = data.skippedLanguages.reduce((total, language) => total + language.files.length, 0);
   const skippedInstallError = state.callFlowInstall.status.state === 'error'

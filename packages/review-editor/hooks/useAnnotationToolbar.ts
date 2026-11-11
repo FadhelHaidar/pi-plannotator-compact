@@ -185,7 +185,7 @@ export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelecti
     currentDraftKeyRef.current = draftKey(filePath, range);
     restoreDraftKeyByFilePath.delete(filePath);
 
-    const side = range.side === 'additions' ? 'new' : 'old';
+    const side = range.side === 'deletions' ? 'old' : 'new';
     const start = Math.min(range.start, range.end);
     const end = Math.max(range.start, range.end);
     setSelectedOriginalCode(extractLinesFromPatch(patch, start, end, side as 'old' | 'new'));
@@ -349,7 +349,7 @@ export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelecti
       currentDraftKeyRef.current = key;
       restoreDraftKeyByFilePath.delete(filePath);
 
-      const side = draft.range.side === 'additions' ? 'new' : 'old';
+      const side = draft.range.side === 'deletions' ? 'old' : 'new';
       const start = Math.min(draft.range.start, draft.range.end);
       const end = Math.max(draft.range.start, draft.range.end);
       setSelectedOriginalCode(extractLinesFromPatch(patch, start, end, side as 'old' | 'new'));

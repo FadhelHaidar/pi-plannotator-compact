@@ -703,7 +703,7 @@ const ReviewApp: React.FC = () => {
     switch (action.kind) {
       case 'code':
         setAnnotations((current) => {
-          const next = applyCollectionMutations(current, action.mutations, direction, reviewItemId);
+          const next = applyCollectionMutations(current, action.mutations, direction, reviewItemId) as CodeAnnotation[];
           annotationsRef.current = next;
           return next;
         });
@@ -712,7 +712,7 @@ const ReviewApp: React.FC = () => {
         return;
       case 'description':
         setDescriptionAnnotations((current) => {
-          const next = applyCollectionMutations(current, action.mutations, direction, reviewItemId);
+          const next = applyCollectionMutations(current, action.mutations, direction, reviewItemId) as Annotation[];
           descriptionAnnotationsRef.current = next;
           return next;
         });
@@ -721,7 +721,7 @@ const ReviewApp: React.FC = () => {
         return;
       case 'comment':
         setCommentAnnotations((current) => {
-          const next = applyCollectionMutations(current, action.mutations, direction, reviewItemId);
+          const next = applyCollectionMutations(current, action.mutations, direction, reviewItemId) as CommentAnnotation[];
           commentAnnotationsRef.current = next;
           return next;
         });

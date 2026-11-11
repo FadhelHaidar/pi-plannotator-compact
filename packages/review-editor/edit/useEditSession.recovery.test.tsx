@@ -14,10 +14,11 @@
  * "Run UI seam-contract + DOM tests" step.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { CodeViewHandle } from '@pierre/diffs/react';
+import type { EditorChangeEvent } from './pierreEditAdapter';
 import type { CodeViewItem, FileDiffMetadata } from '@pierre/diffs';
 import type { DiffAnnotationMetadata } from '@plannotator/ui/types';
 import type { DiffFile } from '../types';
@@ -25,6 +26,10 @@ import { recoverDirtySessionHunks, useEditSession, type EditSessionApi } from '.
 import type { SuggestionHunk } from './deriveSuggestions';
 
 const hasDom = typeof document !== 'undefined';
+
+// SAFETY: the tests only exercise `event.file`; CodeView owns the other fields.
+const change = (contents: string) =>
+  ({ file: { contents } } as unknown as EditorChangeEvent<'file-diff', DiffAnnotationMetadata, undefined>);
 
 describe('recoverDirtySessionHunks', () => {
   test('derives hunks from the last observed contents', () => {
@@ -118,7 +123,7 @@ describe.if(hasDom)('useEditSession file-set change with a dirty session (DOM)',
     const handle = {
       getItem: (id: string) => (id === item.id ? item : undefined),
       updateItem: () => {},
-    } as unknown as CodeViewHandle<DiffAnnotationMetadata>;
+    } as unknown as CodeViewHandle<DiffAnnotationMetadata, undefined>;
     const file: DiffFile = {
       path: 'src/calc.ts',
       status: 'modified',
@@ -132,7 +137,7 @@ describe.if(hasDom)('useEditSession file-set change with a dirty session (DOM)',
     let api: EditSessionApi | null = null;
 
     function HookHost() {
-      const viewerRef = useRef<CodeViewHandle<DiffAnnotationMetadata> | null>(handle);
+      const viewerRef = useRef<CodeViewHandle<DiffAnnotationMetadata, undefined> | null>(handle);
       const itemIdToFileRef = useRef(new Map([[item.id, file]]));
       const reviewBaseRef = useRef<string | undefined>(undefined);
       const reviewSnapshotIdRef = useRef<string | undefined>(undefined);
@@ -180,7 +185,7 @@ describe.if(hasDom)('useEditSession file-set change with a dirty session (DOM)',
     };
 
     await act(async () => {
-      api.onItemEditChange(item, { contents: 'line one\nline 2 edited\nline three\n' });
+      api.onItemEditChange(change('line one\nline 2 edited\nline three\n'), item);
     });
     fileSetKeyRef.current = 'gen-2'; // sort-order flip, diff switch, etc.
     await act(async () => {
@@ -214,7 +219,7 @@ describe.if(hasDom)('useEditSession file-set change with a dirty session (DOM)',
     };
 
     await act(async () => {
-      api.onItemEditChange(item, { contents: 'changed\n' });
+      api.onItemEditChange(change('changed\n'), item);
     });
     fileSetKeyRef.current = 'gen-2';
     await act(async () => {
@@ -253,7 +258,7 @@ describe.if(hasDom)('useEditSession file-set change with a dirty session (DOM)',
     };
 
     await act(async () => {
-      api.onItemEditChange(item, { contents: PRE_EDIT });
+      api.onItemEditChange(change(PRE_EDIT), item);
     });
     fileSetKeyRef.current = 'gen-2';
     await act(async () => {

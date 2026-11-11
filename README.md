@@ -4,7 +4,7 @@ A standalone [Pi coding agent](https://github.com/earendil-works/pi) extension f
 
 ## Install, update, remove
 
-Requires **Pi 0.79.1+** and its supported Node runtime. Prebuilt installs need no Bun or source build:
+Requires **Pi 0.79.1+** and its supported Node runtime. Compatibility checks cover Pi **0.79.1, 1.2.0, 1.5.0 and 1.5.2**; see [validation results and limits](docs/COMPATIBILITY-VALIDATION.md). Prebuilt installs need no Bun or source build:
 
 ```bash
 pi install npm:@fadhelhaidar/pi-plannotator-compact
@@ -36,7 +36,7 @@ Remove only the source you installed (use its exact string for local/git install
 
 ## Tracker, plan mode and shortcuts
 
-- `/plannotator-tracker [off|compact|full|toggle|status]`: **compact** (default) shows `Plan: X/Y complete`, up to three pending steps and a hidden-step count (five rows maximum, no completed rows). **Full** shows all steps with completed steps struck through. **Off** hides the widget but keeps the footer and enforces mirroring to a detected todo provider, even when `todoProvider` is `"off"`. Legacy `on` means compact. **Alt+T** cycles off → compact → full.
+- `/plannotator-tracker [off|compact|full|toggle|status]`: **compact** (default) shows `Plan: X/Y complete`, up to three pending steps and a hidden-step count (five rows maximum, no completed rows). **Full** shows all steps with completed steps checked and muted. **Off** hides the widget but keeps the footer and enforces mirroring to a detected todo provider, even when `todoProvider` is `"off"`. Legacy `on` means compact. **Alt+T** cycles off → compact → full.
 - `piProgressWidgetMode` persists in `~/.plannotator/config.json`; the old boolean visibility key is still readable.
 - `/plannotator-plan-mode` or **Alt+P** toggles plan mode; `pi --plan` starts in plan mode. Other commands: `/plannotator-review`, `/plannotator-annotate`, `/plannotator-last`.
 - On WSL/Windows, Pi may reserve `alt+p` for model-cycle-backward. Merge `"app.model.cycleBackward": "alt+m"` into `~/.pi/agent/keybindings.json` to free it. Extension shortcuts are raw keys, not remapped by that file.

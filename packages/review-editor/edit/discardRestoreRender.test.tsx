@@ -184,11 +184,11 @@ describe.if(hasDom)('edit-mode Discard repaints the pristine diff (DOM)', () => 
       };
 
       let api: EditSessionApi | null = null;
-      let handle: CodeViewHandle<DiffAnnotationMetadata> | null = null;
+      let handle: CodeViewHandle<DiffAnnotationMetadata, undefined> | null = null;
       const fileSetKeyRef = { current: 'gen-1' };
 
       function Harness() {
-        const viewerRef = useRef<CodeViewHandle<DiffAnnotationMetadata> | null>(null);
+        const viewerRef = useRef<CodeViewHandle<DiffAnnotationMetadata, undefined> | null>(null);
         const itemIdToFileRef = useRef(new Map([[item.id, file]]));
         const reviewBaseRef = useRef<string | undefined>(undefined);
         const reviewSnapshotIdRef = useRef<string | undefined>(undefined);

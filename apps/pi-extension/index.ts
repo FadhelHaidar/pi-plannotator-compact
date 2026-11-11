@@ -21,7 +21,6 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -35,8 +34,9 @@ import {
 	parseChecklist,
 	renderCompletedChecklist,
 } from "./generated/checklist.ts";
-import { loadConfig, resolveAgentTool, resolvePiProgressWidgetMode, resolveUseJina, saveConfig } from "./generated/config.ts";
+import { loadConfig, resolveAgentTool, resolveAutoReload, resolvePiProgressWidgetMode, resolveUseJina, saveConfig } from "./generated/config.ts";
 import { createProgressWidget, type ProgressWidgetMode } from "./progress-widget.ts";
+import { setupAutoReload } from "./auto-reload.ts";
 import { ensureAltPlanRemap } from "./auto-keymap.ts";
 import { readImprovementHook } from "./generated/improvement-hooks.ts";
 import { composeImproveContext } from "./generated/pfm-reminder.ts";
@@ -85,7 +85,7 @@ import { getServerPorts, isRemoteSession, isUrlHostOverridden } from "./server/n
 import { isBrowserSessionStoppedError } from "./browser-session-error.ts";
 import { classifyAnnotateOutcome } from "./annotate-outcome.ts";
 import { classifyReviewOutcome } from "./review-outcome.ts";
-import { createPiSessionBridgeHub } from "./pi-session-bridge.ts";
+import { createPiSessionBridgeHub, PLANNOTATOR_ASK_CUSTOM_TYPE } from "./pi-session-bridge.ts";
 import type { BrowserDecisionSession, PlanReviewBrowserSession, PlanReviewDecision } from "./plannotator-browser.ts";
 import type { AnnotateBundleFile } from "./generated/annotate-bundle.ts";
 import {
@@ -493,6 +493,27 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 	let todoProvider: TodoProvider | undefined;
 	/** Latch: no provider found, or one sync failed. Cleared on return to idle. */
 	let todoProviderDisabled = false;
+
+	// Reload Pi after an in-place package update, but only when no work can be
+	// lost. The command and listeners are registered once per extension
+	// instance; process globals carry the one-try marker across the reload.
+	setupAutoReload(pi, {
+		enabled: resolveAutoReload(loadConfig(), process.env),
+		plannotatorBusy: () => {
+			if (pendingPlanReview) return "an open plan review";
+			if (openReviews.openAll().length > 0) return "an open review";
+			if (sessionBridgeHub.hasActiveAsk) return "an Ask question";
+			return null;
+		},
+		piVersion: async () => {
+			try {
+				const sdk = (await import("@earendil-works/pi-coding-agent")) as { VERSION?: unknown };
+				return typeof sdk.VERSION === "string" ? sdk.VERSION : null;
+			} catch {
+				return null;
+			}
+		},
+	});
 
 	pi.on("session_start", (_event, ctx) => {
 		sessionAlive = true;
@@ -1737,12 +1758,17 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 		label: "Mark Plan Step Done",
 		description:
 			"Mark one approved-plan checklist step complete. Call this immediately after finishing each step and before starting the next one.",
-		parameters: Type.Object({
-			step: Type.Number({
-				description: "One-based number of the completed plan checklist step.",
-				multipleOf: 1,
-			}),
-		}) as any,
+		parameters: {
+			type: "object",
+			properties: {
+				step: {
+					type: "number",
+					description: "One-based number of the completed plan checklist step.",
+					multipleOf: 1,
+				},
+			},
+			required: ["step"],
+		} as any,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (phase !== "executing") {
@@ -1792,12 +1818,17 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 			"This tool returns as soon as the review is open; the decision arrives later as a new message, so end your turn and wait for it, and do not implement before approval. " +
 			"If you revise the plan while the review is open, call this again with the same path to update the open review. " +
 			"If denied, edit the same file in place, then call this again with the same path.",
-		parameters: Type.Object({
-			filePath: Type.String({
-				description:
-					"Path to the markdown plan file, relative to the working directory. Must end in .md or .mdx and resolve inside cwd.",
-			}),
-		}) as any,
+		parameters: {
+			type: "object",
+			properties: {
+				filePath: {
+					type: "string",
+					description:
+						"Path to the markdown plan file, relative to the working directory. Must end in .md or .mdx and resolve inside cwd.",
+				},
+			},
+			required: ["filePath"],
+		} as any,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			// Guard: must be in planning phase
@@ -2204,7 +2235,11 @@ export default function plannotator(pi: ExtensionAPI, deps: PlannotatorExtension
 	// (AGENTS.md context, skills catalog, tools guidance, user append text) is
 	// left untouched, and cache-busting reduces to conversation-suffix appends
 	// (#922, approach suggested by Karrq).
-	pi.on("before_agent_start", async (_event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
+		// Pi 1.2+ also fires this for custom-triggered runs; our Ask must own its prelude.
+		const trigger = event as { messageType?: string; message?: { customType?: string } };
+		if (trigger.messageType === "custom" && trigger.message?.customType === PLANNOTATOR_ASK_CUSTOM_TYPE) return;
+
 		if (phase !== "planning" && phase !== "executing") {
 			// Idle injects nothing (#1269) — with one exception: the first
 			// prompt after a planning/executing → idle transition delivers a

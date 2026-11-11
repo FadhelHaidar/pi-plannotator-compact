@@ -11,9 +11,11 @@ pi install npm:@fadhelhaidar/pi-plannotator-compact
 # Or install the prebuilt GitHub Release:
 pi install 'npm:@fadhelhaidar/pi-plannotator-compact@https://github.com/FadhelHaidar/pi-plannotator-compact/releases/latest/download/plannotator-pi-extension.tgz'
 pi update --extensions
-# Restart Pi or /reload after updating.
+# On Pi older than 0.84.2, restart Pi or /reload after updating.
 pi remove npm:@fadhelhaidar/pi-plannotator-compact
 ```
+
+On Pi 0.84.2 and newer, an in-place update is picked up without a restart: once the new version has been stable on disk and the session is idle (no run, queued message, compaction, dialog, open review/plan/Ask, recent prompt or typing, and an empty editor), Plannotator reloads Pi automatically. Older Pi keeps the `/reload` note. Opt out with `PLANNOTATOR_AUTO_RELOAD=0` or `{ "autoReload": false }` in `~/.plannotator/config.json`. The environment variable wins; the default is on.
 
 The independent release series uses `vX.Y.Z`; the first standalone version is `0.1.1`, following the old fork's `0.1.0`. Both npm and GitHub Release artifacts use the fork-scoped package identity.
 
@@ -27,7 +29,7 @@ Your `~/.plannotator` data/config and Pi keybindings are retained. Do not load b
 
 ## Pi version and project trust
 
-Requires **Pi 0.79.1 or newer** and its supported Node runtime. Updating only this extension does not repair older Pi security behavior; update Pi itself too.
+Requires **Pi 0.79.1 or newer** and its supported Node runtime. Typechecking, loader/schema validation and focused regression tests cover **0.79.1, 1.2.0, 1.5.0 and 1.5.2**; packed install/load/remove checks cover the floor and latest. This is not a guarantee for every intermediate release or external provider. See the repository's [validation report](https://github.com/FadhelHaidar/pi-plannotator-compact/blob/main/docs/COMPATIBILITY-VALIDATION.md) for test evidence and manual-test limits. Updating only this extension does not repair older Pi security behavior; update Pi itself too.
 
 Pi 0.79 introduced trust for repository-local settings, instructions, resources and packages. Plannotator honors that decision for `.pi/plannotator.json`. Noninteractive sessions ignore project inputs unless already trusted or started with `--approve` (`-a`); `--no-approve` (`-na`) disables project inputs even when previously trusted.
 
@@ -103,6 +105,7 @@ Control it with:
 ```
 
 - No argument cycles off → compact → full (same as `Alt+T`); `off`/`compact`/`full` set the mode explicitly; `status` only reports. The legacy `on` argument still works and means `compact`.
+- Full mode keeps all steps, with completed rows checked and muted. A matching number already present in checkbox text is displayed only once; execution step IDs and saved plan text are unchanged.
 - Turning the tracker off hides the checklist widget only. The footer count (`📋 done/total`) and execution behavior are unchanged.
 - The mode (`piProgressWidgetMode`, default `compact`) is remembered across sessions in `~/.plannotator/config.json`. The old boolean `piProgressWidgetVisible` key still loads (mapped to compact/off) but new saves write `piProgressWidgetMode`.
 - A hidden tracker **enforces the todo-list mirror**: the checklist keeps syncing to any detected todo provider (pi-todos) even when `todoProvider` is configured `"off"`, so hiding the widget never removes every tracking surface. With no provider detected, Plannotator says so and progress stays visible in the footer count.
@@ -169,6 +172,10 @@ Later layers overwrite earlier ones. If a field is omitted, it inherits the valu
   }
 }
 ```
+
+#### Auto-reload
+
+`autoReload` (default `true`) applies only when the running Pi is 0.84.2 or newer. It never reloads during work: the extension checks the session on every poll and again inside the reload command. Set it to `false`, or start Pi with `PLANNOTATOR_AUTO_RELOAD=0`, to keep manual `/reload` behavior.
 
 #### Option reference
 

@@ -18,14 +18,24 @@
  * - `Marker` / `SelectionActionContext` have no public export path, so they
  *   are re-derived structurally from the `Editor` class type.
  */
-import type { CodeAnnotation } from '@plannotator/ui/types';
+import type { CodeAnnotation, DiffAnnotationMetadata } from '@plannotator/ui/types';
+import type { EditorOptions, EditorType } from '@pierre/diffs/edit';
+
+export type {
+  EditCompletionDecision,
+  EditorType,
+  EditorChangeEvent,
+  FileDiffEditCompleteEvent,
+  FileEditCompleteEvent,
+} from '@pierre/diffs/edit';
 
 type EditModule = typeof import('@pierre/diffs/edit');
 
 /** The concrete editor class instance (structural — never import the class type directly elsewhere). */
 export type PierreEditorInstance = InstanceType<EditModule['Editor']>;
-/** Constructor options for the editor (Pierre's `EditorOptions`). */
-export type PierreEditorOptions = NonNullable<ConstructorParameters<EditModule['Editor']>[0]>;
+/** Construction options for the editor (Pierre's `EditorOptions`). The
+ * constructor's first argument is the editor TYPE in 1.6, not the options. */
+export type PierreEditorOptions = EditorOptions<EditorType, DiffAnnotationMetadata, undefined>;
 /** Pierre's `Marker` type, re-derived structurally (it has no export path). */
 export type PierreEditorMarker = Parameters<PierreEditorInstance['setMarkers']>[0][number];
 /** Pierre's `SelectionActionContext`, re-derived structurally from the
@@ -68,9 +78,13 @@ export async function loadPierreEdit(): Promise<void> {
  * awaits `loadPierreEdit()` before any item enters edit mode, so the guard
  * is unreachable in the wired flow.
  */
-export function createPierreEditor(options: PierreEditorOptions): PierreEditorInstance | undefined {
+export function createPierreEditor(
+  editorType: EditorType,
+  options: PierreEditorOptions,
+  editStateKey?: string,
+): PierreEditorInstance | undefined {
   if (!loadedModule) return undefined;
-  return new loadedModule.Editor(options);
+  return new loadedModule.Editor(editorType, options, editStateKey);
 }
 
 /** Test-only: reset module state so load-order tests are deterministic. */

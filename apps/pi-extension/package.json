@@ -45,6 +45,8 @@
     "config.ts",
     "progress-widget.ts",
     "auto-keymap.ts",
+    "auto-reload.ts",
+    "package-version.ts",
     "plannotator.json",
     "server/",
     "todo-providers/",
@@ -62,8 +64,8 @@
     "build": "cp ../hook/dist/index.html plannotator.html && cp ../hook/dist/review.html review-editor.html && bash vendor.sh"
   },
   "dependencies": {
-    "@joplin/turndown-plugin-gfm": "^1.0.64",
-    "@pierre/diffs": "1.3.6",
+    "@joplin/turndown-plugin-gfm": "^1.0.68",
+    "@pierre/diffs": "1.6.4",
     "@plannotator/webtui": "0.1.0",
     "chokidar": "^5.0.0",
     "diff": "^8.0.4",

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseChecklist, markCompletedSteps, renderCompletedChecklist } from "./generated/checklist.ts";
 import { createProgressWidget } from "./progress-widget.ts";
 
 const THEME = { fg: (_color: string, text: string) => text } as never;
@@ -86,4 +87,29 @@ describe("progress widget full mode", () => {
 		);
 		expect(widget.render(80)).toHaveLength(5);
 	});
+});
+
+
+describe("progress widget checklist ordinals", () => {
+  for (const mode of ["compact", "full"] as const) {
+    test(`${mode} normalizes presentation only and retains a raw snapshot`, () => {
+      const raw = "- [x] 1. Finished\n- [ ] 2. Pending\n- [ ] 2026. Budget\n- [ ] 4. 4. Nested\n- [ ] 5. Hidden\n";
+      const checklist = parseChecklist(raw);
+      const before = JSON.stringify(checklist);
+      const widget = createProgressWidget(checklist, THEME, mode);
+      const expected = mode === "full"
+        ? ["Plan: 1/5 complete", "☑ 1. Finished", "☐ 2. Pending", "☐ 3. 2026. Budget", "☐ 4. 4. Nested", "☐ 5. Hidden"]
+        : ["Plan: 1/5 complete", "☐ 2. Pending", "☐ 3. 2026. Budget", "☐ 4. 4. Nested", "… 1 more pending"];
+      expect(widget.render(80)).toEqual(expected);
+      for (const width of [1, 10, 20]) {
+        for (const line of widget.render(width)) expect(line.replace(/\x1b\[[0-9;]*m/g, "").length).toBeLessThanOrEqual(width);
+      }
+      expect(widget.render(0)).toEqual([]);
+      expect(JSON.stringify(checklist)).toBe(before);
+      markCompletedSteps("[DONE:2]", checklist);
+      expect(renderCompletedChecklist(raw, checklist)).toBe(raw.replace("- [ ] 2. Pending", "- [x] 2. Pending"));
+      checklist[1]!.text = "Changed after widget construction";
+      expect(widget.render(80)).toEqual(expected);
+    });
+  }
 });

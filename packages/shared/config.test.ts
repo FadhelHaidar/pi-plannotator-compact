@@ -26,6 +26,7 @@ import {
   AGENT_TOOL_DEFAULTS,
   resolveUseJina,
   resolveTodoProviderEnabled,
+  resolveAutoReload,
   resolveUrlHost,
   isValidUrlHost,
   parseReviewAnalysisConfig,
@@ -40,6 +41,23 @@ import {
   __setConfigSaveMergeWindowHookForTest,
 } from "./config";
 import type { PlannotatorConfig } from "./config";
+
+describe("resolveAutoReload", () => {
+  test("defaults on", () => {
+    expect(resolveAutoReload({}, {})).toBe(true);
+  });
+
+  test("config can turn it off", () => {
+    expect(resolveAutoReload({ autoReload: false }, {})).toBe(false);
+    expect(resolveAutoReload({ autoReload: true }, {})).toBe(true);
+  });
+
+  test("the environment wins in both directions", () => {
+    expect(resolveAutoReload({ autoReload: false }, { PLANNOTATOR_AUTO_RELOAD: "1" })).toBe(true);
+    expect(resolveAutoReload({ autoReload: true }, { PLANNOTATOR_AUTO_RELOAD: "off" })).toBe(false);
+    expect(resolveAutoReload({ autoReload: true }, { PLANNOTATOR_AUTO_RELOAD: "nonsense" })).toBe(true);
+  });
+});
 
 describe("resolveDefaultDiffType", () => {
   test("accepts local-vs-remote as a persisted review default", () => {
