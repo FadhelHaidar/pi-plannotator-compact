@@ -13,3 +13,4 @@ packages/ui/styles.css
 packages/ui/styles.js
 packages/ui/components/html-viewer/bridge-script.asset.js
 packages/ui/components/html-viewer/bridge-script.lite.ts
+plans/
