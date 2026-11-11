@@ -94,10 +94,10 @@ export function piSupportsAutoReload(version: string | null | undefined): boolea
 	const parse = (v: string) => v.trim().replace(/^v/, "").split(/[-+]/)[0]!.split(".");
 	const have = parse(version);
 	if (have.length < 3 || have.slice(0, 3).some((n) => !/^\d+$/.test(n))) return false;
-	const need = [0, 84, 2] as const;
+	const need = MIN_PI_FOR_AUTO_RELOAD.split(".").map(Number) as [number, number, number];
 	for (let i = 0; i < 3; i++) {
 		const h = Number(have[i]);
-		const n = need[i as 0 | 1 | 2];
+		const n = need[i]!;
 		if (h > n) return true;
 		if (h < n) return false;
 	}
@@ -120,7 +120,9 @@ export interface QuietState {
 
 /** Why a reload must wait now, or null when nothing can be lost. */
 export function reloadBlockedBy(s: QuietState): string | null {
-	if (s.running || !s.idle) return "a run";
+	// isIdle() is authoritative: a missed agent_settled must not wedge the
+	// watcher forever, which would also suppress the update note.
+	if (!s.idle) return "a run";
 	if (s.pendingMessages) return "a queued message";
 	if (s.compacting) return "a compaction";
 	if (s.inputAt !== null && s.now - s.inputAt < INPUT_GRACE_MS) return "a submitted prompt";
@@ -247,9 +249,8 @@ export function setupAutoReload(pi: AutoReloadPi, options: AutoReloadOptions): A
 	};
 
 	const sessionFree = (c: ExtensionContext): boolean => {
-		if (running) return false;
 		try {
-			return c.isIdle();
+			return c.isIdle() && !c.hasPendingMessages();
 		} catch {
 			return false;
 		}
@@ -339,7 +340,18 @@ export function setupAutoReload(pi: AutoReloadPi, options: AutoReloadOptions): A
 					return;
 				}
 			}
-			await cmdCtx.reload();
+			try {
+				await cmdCtx.reload();
+			} catch {
+				const left = readMarker();
+				if (automatic && left) {
+					clearMarker();
+					notify(cmdCtx, packageUpdatedMessage(left.from, left.to), "warning");
+				} else {
+					notify(cmdCtx, "Pi could not reload. Check the extension log, then try /reload again.", "warning");
+				}
+				return;
+			}
 			// A new instance takes the marker in its session_start, before reload() returns.
 			// Still here with the marker: no Plannotator loaded. Either Pi refused the reload
 			// (its warning says why; this context still works, so the note follows it), or Pi

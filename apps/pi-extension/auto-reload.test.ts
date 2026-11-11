@@ -99,17 +99,18 @@ function makeCtx(options: { idle?: boolean; pending?: boolean; editor?: string; 
 	};
 }
 
-function harness(overrides: { enabled?: boolean; version?: string | null; disk?: string | null; loaded?: string; settled?: boolean; reset?: boolean } = {}) {
+function harness(overrides: { enabled?: boolean; version?: string | null; disk?: string | null; loaded?: string; settled?: boolean | (() => boolean); reset?: boolean } = {}) {
 	if (overrides.reset !== false) resetProcessState();
 	let clock = 0;
 	let disk = overrides.disk ?? "0.1.0";
+	let settled = overrides.settled ?? true;
 	const pi = new FakePi();
 	const controller = setupAutoReload(pi, {
 		enabled: overrides.enabled ?? true,
 		plannotatorBusy: () => null,
 		piVersion: async () => overrides.version ?? "1.0.0",
 		readOnDisk: () => disk,
-		installSettled: () => overrides.settled ?? true,
+		installSettled: () => (typeof settled === "function" ? settled() : settled),
 		loaded: overrides.loaded ?? "0.1.0",
 		now: () => clock,
 		poll: false,
@@ -119,6 +120,9 @@ function harness(overrides: { enabled?: boolean; version?: string | null; disk?:
 		controller,
 		setDisk: (value: string | null) => {
 			disk = value;
+		},
+		setSettled: (value: boolean | (() => boolean)) => {
+			settled = value;
 		},
 		advance: (ms: number) => {
 			clock += ms;
@@ -147,7 +151,7 @@ describe("piSupportsAutoReload", () => {
 describe("reloadBlockedBy", () => {
 	test("allows only a genuinely quiet session", () => {
 		expect(reloadBlockedBy(quiet())).toBeNull();
-		expect(reloadBlockedBy(quiet({ running: true }))).toBe("a run");
+		expect(reloadBlockedBy(quiet({ running: true }))).toBeNull();
 		expect(reloadBlockedBy(quiet({ idle: false }))).toBe("a run");
 		expect(reloadBlockedBy(quiet({ pendingMessages: true }))).toBe("a queued message");
 		expect(reloadBlockedBy(quiet({ compacting: true }))).toBe("a compaction");
@@ -323,5 +327,111 @@ describe("setupAutoReload", () => {
 		}, ctx);
 		expect(result).toEqual({ action: "handled" });
 		expect(notifications).toHaveLength(1);
+	});
+
+	test("a missed agent_settled does not wedge a genuinely idle session", async () => {
+		const h = harness();
+		const { ctx } = makeCtx();
+		await h.pi.emit("session_start", { reason: "startup" }, ctx);
+		await h.controller.ready;
+		await h.pi.emit("agent_settled", {}, ctx);
+		await h.pi.emit("agent_start", {}, ctx);
+		// Pi 0.80.4+ emits agent_end before agent_settled; this one never settles.
+		await h.pi.emit("agent_end", {}, ctx);
+
+		h.setDisk("0.2.0");
+		h.controller.check();
+		h.advance(STABLE_MS);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(1);
+	});
+
+	test("a failed reload reports and clears the marker", async () => {
+		const h = harness();
+		const first = makeCtx();
+		await h.pi.emit("session_start", { reason: "startup" }, first.ctx);
+		await h.controller.ready;
+		h.setDisk("0.2.0");
+		h.controller.check();
+		h.advance(STABLE_MS);
+		h.controller.check();
+		const command = h.pi.commands.get(AUTO_RELOAD_COMMAND)!;
+		first.ctx.reload = async () => {
+			throw new Error("reload refused");
+		};
+		await command.handler("auto", first.ctx);
+		expect(first.notifications).toContainEqual({
+			message: "Plannotator was updated from 0.1.0 to 0.2.0 while Pi was running. Type /reload to load the new version.",
+			kind: "warning",
+		});
+		expect((globalThis as Record<string, unknown>).__plannotatorAutoReload_v1).toBeUndefined();
+	});
+
+	test("the stable clock starts when the install first looks whole", async () => {
+		const h = harness({ settled: false });
+		const { ctx } = makeCtx();
+		await h.pi.emit("session_start", { reason: "startup" }, ctx);
+		await h.controller.ready;
+		h.setDisk("0.2.0");
+		h.controller.check();
+		h.advance(5_000);
+		h.controller.check();
+		h.setSettled(true);
+		h.controller.check();
+		h.advance(STABLE_MS - 1);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(0);
+		h.advance(1);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(1);
+	});
+
+	test("a renamed command shows the note instead of sending text", async () => {
+		const h = harness();
+		const { ctx, notifications } = makeCtx();
+		await h.pi.emit("session_start", { reason: "startup" }, ctx);
+		await h.controller.ready;
+		h.setDisk("0.2.0");
+		h.controller.check();
+		h.advance(STABLE_MS);
+		h.pi.commandsAtPi.splice(0);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(0);
+		expect(notifications).toHaveLength(1);
+		expect(notifications[0]?.message).toContain("/reload");
+	});
+
+	test("dialog wiring holds the reload", async () => {
+		const h = harness();
+		const { ctx } = makeCtx();
+		await h.pi.emit("session_start", { reason: "startup" }, ctx);
+		await h.controller.ready;
+		h.setDisk("0.2.0");
+		h.controller.check();
+		h.advance(STABLE_MS);
+
+		await h.pi.emit("ui_prompt_start", {}, ctx);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(0);
+		await h.pi.emit("ui_prompt_end", {}, ctx);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(1);
+	});
+
+	test("compaction wiring holds the reload", async () => {
+		const h = harness();
+		const { ctx } = makeCtx();
+		await h.pi.emit("session_start", { reason: "startup" }, ctx);
+		await h.controller.ready;
+		h.setDisk("0.2.0");
+		h.controller.check();
+		h.advance(STABLE_MS);
+
+		await h.pi.emit("session_before_compact", {}, ctx);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(0);
+		await h.pi.emit("session_compact", {}, ctx);
+		h.controller.check();
+		expect(h.pi.sent).toHaveLength(1);
 	});
 });
