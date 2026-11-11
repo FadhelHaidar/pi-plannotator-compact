@@ -1,12 +1,15 @@
-import React, {
+import {
   createContext,
   useCallback,
   useContext,
+  useRef,
   useEffect,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { findScrollRoot } from './scrollRoot';
+import { useEndHold } from './useEndHold';
 
 const MAX_MOUNTED_CODE_VIEWS = 8;
 const INITIAL_MOUNTED_CODE_VIEWS = 2;
@@ -28,26 +31,6 @@ interface RegisteredShell {
 }
 
 type Subscriber = () => void;
-
-/**
- * The nearest ancestor that actually scrolls the guide, or null for the
- * window. `body`/`html` are never returned: an overflow set on them propagates
- * to the viewport (the element itself does not scroll — its scrollHeight equals
- * its clientHeight), so observing it as an IntersectionObserver root would make
- * every shell "near", anchor distances to the middle of the whole document,
- * and hang the scroll listener on an element that never emits scroll events —
- * the CodeViews would then only mount on hover (`requestMount`).
- */
-function findScrollRoot(host: HTMLElement): HTMLElement | null {
-  let current = host.parentElement;
-  while (current) {
-    if (current === document.body || current === document.documentElement) return null;
-    const overflowY = getComputedStyle(current).overflowY;
-    if (overflowY === 'auto' || overflowY === 'scroll') return current;
-    current = current.parentElement;
-  }
-  return null;
-}
 
 function setEquals(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
   if (left.size !== right.size) return false;
@@ -393,12 +376,18 @@ export function GuideViewportProvider({
   eager?: boolean;
 }) {
   const [manager] = useState(() => new GuideViewportManager(eager));
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  useEndHold(hostRef);
+  const attachHost = useCallback((element: HTMLDivElement | null) => {
+    hostRef.current = element;
+    manager.attachHost(element);
+  }, [manager]);
   useEffect(() => {
     manager.setEager(eager);
   }, [manager, eager]);
   return (
     <GuideViewportContext.Provider value={manager}>
-      <div ref={manager.attachHost} className={className}>
+      <div ref={attachHost} className={className}>
         {children}
       </div>
     </GuideViewportContext.Provider>
