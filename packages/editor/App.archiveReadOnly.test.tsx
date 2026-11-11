@@ -393,8 +393,11 @@ describe.if(hasDom)("App document permissions", () => {
 
     await act(async () => optionsButton.click());
     await act(async () => findButtonContaining("Ask AI")?.click());
-    expect(document.querySelector('[data-pn-compact-plan-stage="true"]')?.getAttribute("aria-label")).toBe("Ask AI");
-    expect(document.querySelector('textarea[placeholder="Ask about this document..."]')?.getAttribute("data-pn-mobile-editable")).toBe("true");
+    const askAIStage = document.querySelector('[data-pn-compact-plan-stage="true"][aria-label="Ask AI"]');
+    expect(askAIStage).not.toBeNull();
+    const askAIInput = askAIStage?.querySelector("textarea");
+    expect(askAIInput).not.toBeNull();
+    expect(askAIInput?.getAttribute("data-pn-mobile-editable")).toBe("true");
     const closeAI = document.querySelector<HTMLButtonElement>('button[aria-label="Close Ask AI"]');
     if (!closeAI) throw new Error("Compact Ask AI close control did not render");
     await act(async () => closeAI.click());

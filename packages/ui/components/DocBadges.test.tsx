@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import React, { act } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { resetStorageBackend, setStorageBackend } from '../utils/storage';
-import { DocBadges, type DocBadgesProps } from './DocBadges';
+import type { DocBadgesProps } from './DocBadges';
+
+type DocBadgesComponent = typeof import('./DocBadges').DocBadges;
+
+// OpenInAppButton memoizes its /api/open-in/apps catalog for the process.
+// Earlier DOM tests can mount it while their fetch stub reports no apps, so
+// these placement checks must render a fresh module pair with their own
+// fetch stub rather than the shared (possibly poisoned) instance.
+let DocBadges: DocBadgesComponent;
+async function loadFreshDocBadges(): Promise<void> {
+  const docBadgesPath = require.resolve('./DocBadges.tsx');
+  const openInPath = require.resolve('./OpenInAppButton.tsx');
+  delete require.cache[docBadgesPath];
+  delete require.cache[openInPath];
+  DocBadges = (await import('./DocBadges')).DocBadges;
+}
 
 const hasDom = typeof document !== 'undefined';
 
@@ -42,7 +57,8 @@ async function renderBadges(props: Partial<DocBadgesProps>): Promise<void> {
 }
 
 describe('DocBadges open-in placement', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await loadFreshDocBadges();
     setStorageBackend({
       getItem: () => 'reveal',
       setItem: () => {},
