@@ -35,7 +35,7 @@
     "dompurify": "^3.4.17",
     "marked": "^17.0.6",
     "sonner": "^2.0.8",
-    "@joplin/turndown-plugin-gfm": "^1.0.64",
+    "@joplin/turndown-plugin-gfm": "^1.0.68",
     "@plannotator/webtui": "0.1.0",
     "chokidar": "^5.0.0",
     "parse5": "^7.3.0",

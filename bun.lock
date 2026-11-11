@@ -5,7 +5,7 @@
     "": {
       "name": "plannotator",
       "dependencies": {
-        "@joplin/turndown-plugin-gfm": "^1.0.64",
+        "@joplin/turndown-plugin-gfm": "^1.0.68",
         "@pierre/diffs": "1.3.6",
         "@plannotator/webtui": "0.1.0",
         "chokidar": "^5.0.0",
@@ -48,7 +48,7 @@
       "name": "@fadhelhaidar/pi-plannotator-compact",
       "version": "0.1.1",
       "dependencies": {
-        "@joplin/turndown-plugin-gfm": "^1.0.64",
+        "@joplin/turndown-plugin-gfm": "^1.0.68",
         "@pierre/diffs": "1.3.6",
         "@plannotator/webtui": "0.1.0",
         "chokidar": "^5.0.0",
@@ -171,7 +171,7 @@
       "name": "@plannotator/shared",
       "version": "0.0.1",
       "dependencies": {
-        "@joplin/turndown-plugin-gfm": "^1.0.64",
+        "@joplin/turndown-plugin-gfm": "^1.0.68",
         "@plannotator/core": "workspace:*",
         "chokidar": "^5.0.0",
         "parse5": "^7.3.0",
@@ -463,7 +463,7 @@
 
     "@iconify/utils": ["@iconify/utils@3.1.7", "", { "dependencies": { "@antfu/install-pkg": "^2.0.1", "@iconify/types": "^2.0.0", "import-meta-resolve": "^4.2.0" } }, "sha512-JZHlwdID+dy+lTgbYC8NEC4zeugqeYsc6jewvzb4c58kHauJn+X7rNwQjxz5p2qSjqaEeQoLkCIQ9v/H4PK0/w=="],
 
-    "@joplin/turndown-plugin-gfm": ["@joplin/turndown-plugin-gfm@1.0.67", "", {}, "sha512-FZfW5EZfidhzd1IaY1uxHnIZPTVOxAdleMZ4/1U6Nt5b7+Qj5JThDnaIomuJtetnUBzuRNbe9FWMuqD4B3dlWA=="],
+    "@joplin/turndown-plugin-gfm": ["@joplin/turndown-plugin-gfm@1.0.68", "", {}, "sha512-m8DfAQNC/V7g0j5H6Jv60WhekBBjodD+zTPGrU+g2m+ux/z8ZX07KQIl6kaAmbKwfvsQhC04op52g63I78sVgg=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
